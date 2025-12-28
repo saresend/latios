@@ -93,20 +93,5 @@ fn export_task_to_markdown(markdown: &mut String, task: &Task, data: &AppData) {
         markdown.push_str("\n");
     }
 
-    // Code snippets
-    if !task.code_snippets.is_empty() {
-        markdown.push_str("### Code Snippets\n\n");
-        for (i, snippet) in task.code_snippets.iter().enumerate() {
-            if let Some(desc) = &snippet.description {
-                markdown.push_str(&format!("**Snippet {}:** {}\n\n", i + 1, desc));
-            }
-
-            let lang = snippet.language.as_deref().unwrap_or("");
-            markdown.push_str(&format!("```{}\n", lang));
-            markdown.push_str(&snippet.code);
-            markdown.push_str("\n```\n\n");
-        }
-    }
-
     markdown.push_str("---\n\n");
 }

@@ -126,7 +126,7 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let help_text = if app.input_mode == InputMode::Insert {
         "ESC cancel | ENTER confirm"
     } else {
-        "? help | a add | e edit | d delete | p projects | x export | q quit"
+        "? help | a add | e edit | c copy | d delete | x export | q quit"
     };
 
     let status = if let Some(msg) = &app.status_message {

@@ -9,7 +9,6 @@ pub struct Task {
     pub project_id: Option<String>,
     pub tags: Vec<String>,
     pub file_references: Vec<FileReference>,
-    pub code_snippets: Vec<CodeSnippet>,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -22,12 +21,6 @@ pub struct FileReference {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodeSnippet {
-    pub language: Option<String>,
-    pub code: String,
-    pub description: Option<String>,
-}
 
 impl Task {
     pub fn new(title: String) -> Self {
@@ -40,7 +33,6 @@ impl Task {
             project_id: None,
             tags: Vec::new(),
             file_references: Vec::new(),
-            code_snippets: Vec::new(),
             created_at: now.clone(),
             updated_at: now,
             completed_at: None,
@@ -72,12 +64,3 @@ impl FileReference {
     }
 }
 
-impl CodeSnippet {
-    pub fn new(code: String) -> Self {
-        Self {
-            language: None,
-            code,
-            description: None,
-        }
-    }
-}

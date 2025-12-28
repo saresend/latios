@@ -5,7 +5,7 @@ A minimal productivity TUI (Terminal User Interface) for managing todos with ric
 ## Features
 
 - **Todo Management**: Add, complete, and delete tasks
-- **Rich Context**: Attach descriptions, file references, code snippets, and tags to tasks
+- **Rich Context**: Attach descriptions, file references, and tags to tasks
 - **Projects**: Organize tasks into projects (coming soon)
 - **AI Export**: Export tasks to markdown format optimized for AI tools
 - **Persistent Storage**: All data stored in human-readable JSON
@@ -65,7 +65,6 @@ The export format includes:
 - Task metadata (ID, status, timestamps, project, tags)
 - Descriptions
 - File references with line numbers
-- Code snippets with syntax highlighting hints
 
 This format is optimized for pasting into AI chat tools like Claude or ChatGPT to get help with your tasks.
 
@@ -82,7 +81,6 @@ This format is optimized for pasting into AI chat tools like Claude or ChatGPT t
 - 📋 Task detail view with rich context editing
   - Add/edit descriptions
   - Attach file references
-  - Include code snippets
   - Tag management
 - 📁 Project management and filtering
 - 🔍 Search and filter tasks

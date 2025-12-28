@@ -54,6 +54,9 @@ where
     <B as ratatui::backend::Backend>::Error: Send + Sync + 'static,
 {
     loop {
+        // Check status message timeout
+        app.check_status_timeout();
+
         // Render UI
         terminal.draw(|f| ui::render(f, app))?;
 

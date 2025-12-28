@@ -32,11 +32,18 @@ pub struct App {
     pub input_buffer: String,
     pub cursor_position: usize,
 
+    // Detail view state
+    pub editing_task_id: Option<String>,
+    pub detail_field_selection: usize,
+    pub detail_scroll: usize,
+    pub multiline_buffer: Vec<String>,
+
     // File path for data persistence
     pub data_file_path: String,
 
     // Status message
     pub status_message: Option<String>,
+    pub status_timestamp: Option<std::time::Instant>,
 }
 
 impl App {
@@ -52,8 +59,13 @@ impl App {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             cursor_position: 0,
+            editing_task_id: None,
+            detail_field_selection: 0,
+            detail_scroll: 0,
+            multiline_buffer: Vec::new(),
             data_file_path,
             status_message: None,
+            status_timestamp: None,
         }
     }
 
@@ -130,9 +142,60 @@ impl App {
 
     pub fn set_status(&mut self, message: String) {
         self.status_message = Some(message);
+        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     pub fn clear_status(&mut self) {
         self.status_message = None;
+        self.status_timestamp = None;
+    }
+
+    pub fn check_status_timeout(&mut self) {
+        if let Some(timestamp) = self.status_timestamp {
+            if timestamp.elapsed() >= std::time::Duration::from_millis(500) {
+                self.clear_status();
+            }
+        }
+    }
+
+    // Detail view methods
+    pub fn start_edit_task(&mut self) {
+        if let Some(task_id) = self.get_selected_task_id() {
+            self.editing_task_id = Some(task_id);
+            self.current_view = AppView::TaskDetail;
+            self.detail_field_selection = 0;
+            self.input_mode = InputMode::Normal;
+        }
+    }
+
+    pub fn exit_detail_view(&mut self) {
+        self.editing_task_id = None;
+        self.current_view = AppView::TaskList;
+        self.input_mode = InputMode::Normal;
+        self.input_buffer.clear();
+        self.multiline_buffer.clear();
+    }
+
+    pub fn next_detail_field(&mut self) {
+        // Max 3 sections: title, description, tags, file_refs
+        self.detail_field_selection = (self.detail_field_selection + 1).min(3);
+    }
+
+    pub fn previous_detail_field(&mut self) {
+        if self.detail_field_selection > 0 {
+            self.detail_field_selection -= 1;
+        }
+    }
+
+    pub fn get_editing_task(&self) -> Option<&crate::models::Task> {
+        self.editing_task_id
+            .as_ref()
+            .and_then(|id| self.data.get_task(id))
+    }
+
+    pub fn get_editing_task_mut(&mut self) -> Option<&mut crate::models::Task> {
+        self.editing_task_id
+            .as_ref()
+            .and_then(|id| self.data.get_task_mut(id))
     }
 }

@@ -17,8 +17,8 @@ Normal Mode (Task List):
   Space/Enter   Toggle task completion
   a             Add new task
   e             Edit task details
+  c/y           Copy task to clipboard
   d             Delete task
-  p             Switch projects
   x             Export to markdown
   ?             Show this help
   q             Quit
