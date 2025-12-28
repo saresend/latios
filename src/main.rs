@@ -13,6 +13,7 @@ mod models;
 mod storage;
 mod ui;
 mod input;
+mod markdown;
 
 use app::App;
 

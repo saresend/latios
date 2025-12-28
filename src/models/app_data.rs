@@ -73,4 +73,14 @@ impl AppData {
     pub fn get_project(&self, project_id: &str) -> Option<&Project> {
         self.projects.get(project_id)
     }
+
+    pub fn get_project_mut(&mut self, project_id: &str) -> Option<&mut Project> {
+        self.projects.get_mut(project_id)
+    }
+
+    pub fn get_projects_sorted(&self) -> Vec<&Project> {
+        let mut projects: Vec<_> = self.projects.values().collect();
+        projects.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        projects
+    }
 }

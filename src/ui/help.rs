@@ -23,9 +23,19 @@ Normal Mode (Task List):
   ?             Show this help
   q             Quit
 
+Task Detail View:
+  j/k/Tab       Navigate sections
+  h/l or ←/→    Navigate within lists (tags/file refs)
+  i/Enter       Edit selected field
+  a             Add to list (tags/file refs)
+  d             Delete selected item (tags/file refs)
+  ESC/q         Back to task list
+
 Insert Mode:
-  ESC           Cancel input
-  Enter         Confirm input
+  ESC           Save/Cancel (context dependent)
+  Enter         Confirm/Newline (context dependent)
+  Left/Right    Move cursor
+  Backspace     Delete character
 
 Press any key to return...
     "#;

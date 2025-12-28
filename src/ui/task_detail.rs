@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use crate::app::App;
+use crate::app::{App, DetailEditField, InputMode};
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let task = match app.get_editing_task() {
@@ -38,114 +38,260 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_title_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 0;
-    let style = if is_selected {
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+    let is_editing = app.detail_editing_field == Some(DetailEditField::Title);
+
+    if is_editing {
+        // Show input box when editing
+        let input = Paragraph::new(app.input_buffer.as_str())
+            .style(Style::default().fg(Color::Yellow))
+            .block(Block::default().borders(Borders::ALL).title("Title (editing)"));
+        f.render_widget(input, area);
+
+        // Set cursor position
+        if app.input_mode == InputMode::Insert {
+            f.set_cursor_position((area.x + app.cursor_position as u16 + 1, area.y + 1));
+        }
     } else {
-        Style::default()
-    };
+        // Show read-only view
+        let style = if is_selected {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
 
-    let checkbox = if task.completed { "[✓]" } else { "[ ]" };
-    let title_text = format!("{} {}", checkbox, task.title);
+        let checkbox = if task.completed { "[✓]" } else { "[ ]" };
+        let title_text = format!("{} {}", checkbox, task.title);
 
-    let title = Paragraph::new(title_text)
-        .style(style)
-        .block(Block::default().borders(Borders::ALL).title("Title"));
+        let title = Paragraph::new(title_text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Title"));
 
-    f.render_widget(title, area);
+        f.render_widget(title, area);
+    }
 }
 
 fn render_description_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 1;
-    let border_style = if is_selected {
-        Style::default().fg(Color::Yellow)
+    let is_editing = app.detail_editing_field == Some(DetailEditField::Description);
+
+    if is_editing {
+        // Show multiline editor when editing
+        // Combine completed lines with current line being edited
+        let mut all_lines = app.multiline_buffer.clone();
+        // Update the current line being edited
+        if app.current_editing_line_index < all_lines.len() {
+            all_lines[app.current_editing_line_index] = app.input_buffer.clone();
+        }
+        let desc_text = all_lines.join("\n");
+
+        let description = Paragraph::new(desc_text)
+            .style(Style::default().fg(Color::Yellow))
+            .wrap(Wrap { trim: false })
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title("Description (editing - Up/Down to navigate lines, Enter for newline, ESC to save)"));
+
+        f.render_widget(description, area);
+
+        // Set cursor position - show cursor on the current line being edited
+        if app.input_mode == InputMode::Insert {
+            f.set_cursor_position((
+                area.x + app.cursor_position as u16 + 1,
+                area.y + app.current_editing_line_index as u16 + 1,
+            ));
+        }
     } else {
-        Style::default()
-    };
+        // Show read-only view
+        let border_style = if is_selected {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
 
-    let desc_text = if task.description.is_empty() {
-        "(No description)".to_string()
-    } else {
-        task.description.clone()
-    };
+        let desc_text = if task.description.is_empty() {
+            "(No description)".to_string()
+        } else {
+            task.description.clone()
+        };
 
-    let description = Paragraph::new(desc_text)
-        .wrap(Wrap { trim: false })
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title("Description")
-            .border_style(border_style));
+        let description = Paragraph::new(desc_text)
+            .wrap(Wrap { trim: false })
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title("Description")
+                .border_style(border_style));
 
-    f.render_widget(description, area);
+        f.render_widget(description, area);
+    }
 }
 
 fn render_tags_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 2;
-    let border_style = if is_selected {
-        Style::default().fg(Color::Yellow)
+    let is_adding = app.detail_editing_field == Some(DetailEditField::AddingTag);
+
+    if is_adding {
+        // Show input prompt when adding a tag
+        let prompt = format!("Add tag: {}", app.input_buffer);
+        let input = Paragraph::new(prompt)
+            .style(Style::default().fg(Color::Yellow))
+            .block(Block::default().borders(Borders::ALL).title("Tags (adding)"));
+        f.render_widget(input, area);
+
+        // Set cursor position
+        if app.input_mode == InputMode::Insert {
+            f.set_cursor_position((area.x + app.cursor_position as u16 + 10, area.y + 1)); // +10 for "Add tag: "
+        }
     } else {
-        Style::default()
-    };
+        // Show as a list with selection
+        let border_style = if is_selected {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
 
-    let tags_text = if task.tags.is_empty() {
-        "(No tags - press 'a' to add)".to_string()
-    } else {
-        task.tags.iter()
-            .map(|t| format!("[{}]", t))
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
+        let items: Vec<ListItem> = if task.tags.is_empty() {
+            vec![ListItem::new("(No tags - press 'a' to add)")]
+        } else {
+            task.tags.iter().enumerate().map(|(i, tag)| {
+                let content = format!("[{}]", tag);
+                let style = if is_selected && i == app.selected_tag_index {
+                    Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(content).style(style)
+            }).collect()
+        };
 
-    let tags = Paragraph::new(tags_text)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title("Tags")
-            .border_style(border_style));
+        let title = if is_selected && !task.tags.is_empty() {
+            "Tags (h/l to navigate, d to delete, a to add)"
+        } else {
+            "Tags"
+        };
 
-    f.render_widget(tags, area);
+        let tags = List::new(items)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style));
+
+        f.render_widget(tags, area);
+    }
 }
 
 fn render_file_refs_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 3;
-    let border_style = if is_selected {
-        Style::default().fg(Color::Yellow)
+    let is_adding = app.detail_editing_field == Some(DetailEditField::AddingFileRef);
+
+    if is_adding {
+        // Show multi-step input form
+        let (prompt, hint) = match app.file_ref_input_step {
+            0 => ("File path: ", "Enter the file path"),
+            1 => ("Line number (optional): ", "Enter line number or leave blank"),
+            2 => ("Description (optional): ", "Enter description or leave blank"),
+            _ => ("", ""),
+        };
+
+        let input_text = format!("{}{}", prompt, app.input_buffer);
+        let title = format!("File References (adding - step {}/3: {})", app.file_ref_input_step + 1, hint);
+
+        let input = Paragraph::new(input_text)
+            .style(Style::default().fg(Color::Yellow))
+            .block(Block::default().borders(Borders::ALL).title(title));
+        f.render_widget(input, area);
+
+        // Set cursor position
+        if app.input_mode == InputMode::Insert {
+            f.set_cursor_position((area.x + app.cursor_position as u16 + prompt.len() as u16 + 1, area.y + 1));
+        }
     } else {
-        Style::default()
-    };
+        // Show as a list with selection
+        let border_style = if is_selected {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
 
-    let items: Vec<ListItem> = if task.file_references.is_empty() {
-        vec![ListItem::new("(No file references - press 'a' to add)")]
-    } else {
-        task.file_references.iter().map(|file_ref| {
-            let line_part = file_ref.line_number
-                .map(|l| format!(":{}", l))
-                .unwrap_or_default();
-            let desc_part = file_ref.description
-                .as_ref()
-                .map(|d| format!(" - {}", d))
-                .unwrap_or_default();
-            let text = format!("• {}{}{}", file_ref.path, line_part, desc_part);
-            ListItem::new(text)
-        }).collect()
-    };
+        let items: Vec<ListItem> = if task.file_references.is_empty() {
+            vec![ListItem::new("(No file references - press 'a' to add)")]
+        } else {
+            task.file_references.iter().enumerate().map(|(i, file_ref)| {
+                let line_part = file_ref.line_number
+                    .map(|l| format!(":{}", l))
+                    .unwrap_or_default();
+                let desc_part = file_ref.description
+                    .as_ref()
+                    .map(|d| format!(" - {}", d))
+                    .unwrap_or_default();
+                let text = format!("• {}{}{}", file_ref.path, line_part, desc_part);
+                let style = if is_selected && i == app.selected_file_ref_index {
+                    Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(text).style(style)
+            }).collect()
+        };
 
-    let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .title("File References")
-            .border_style(border_style));
+        let title = if is_selected && !task.file_references.is_empty() {
+            "File References (h/l to navigate, d to delete, a to add)"
+        } else {
+            "File References"
+        };
 
-    f.render_widget(list, area);
+        let list = List::new(items)
+            .block(Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style));
+
+        f.render_widget(list, area);
+    }
 }
 
 
 fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let help_text = "ESC/q back | j/k navigate | Tab next section | i edit | a add | d delete";
+    let (mode_text, help_text) = if app.input_mode == InputMode::Insert {
+        // Context-specific help for insert mode
+        match &app.detail_editing_field {
+            Some(DetailEditField::Title) => {
+                ("INSERT", "Enter save | ESC cancel")
+            },
+            Some(DetailEditField::Description) => {
+                ("INSERT", "Enter newline | ESC save")
+            },
+            Some(DetailEditField::AddingTag) => {
+                ("INSERT", "Enter save tag | ESC cancel")
+            },
+            Some(DetailEditField::AddingFileRef) => {
+                ("INSERT", "Enter next step | ESC cancel")
+            },
+            Some(DetailEditField::ProjectName) => {
+                ("INSERT", "Enter save | ESC cancel")
+            },
+            Some(DetailEditField::ProjectDescription) => {
+                ("INSERT", "Enter newline | ESC save")
+            },
+            None => {
+                ("INSERT", "Enter confirm | ESC cancel")
+            }
+        }
+    } else {
+        // Normal mode help
+        ("NORMAL", "ESC/q back | j/k navigate | Tab next | i/Enter edit | a add")
+    };
+
+    let mode_color = if app.input_mode == InputMode::Insert {
+        Color::Green
+    } else {
+        Color::Blue
+    };
 
     let status = Paragraph::new(vec![
         Line::from(vec![
             Span::styled(
-                " NORMAL ",
-                Style::default().bg(Color::Blue).fg(Color::White),
+                format!(" {} ", mode_text),
+                Style::default().bg(mode_color).fg(Color::White),
             ),
             Span::raw(" "),
             Span::raw(help_text),

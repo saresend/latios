@@ -22,3 +22,6 @@ thiserror = "1.0"
 
 # Clipboard
 arboard = "3.4"
+
+# Markdown rendering
+pulldown-cmark = "0.12"
