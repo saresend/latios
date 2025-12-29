@@ -27,3 +27,6 @@ arboard = "3.4"
 
 # Markdown rendering
 pulldown-cmark = "0.12"
+
+# Home directory resolution
+dirs = "5.0"

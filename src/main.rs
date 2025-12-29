@@ -73,6 +73,14 @@ where
 }
 
 fn get_data_file_path() -> anyhow::Result<String> {
-    // For now, use simple path in current directory
-    Ok("./data/latios.json".to_string())
+    // Get home directory using dirs crate
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+
+    // Construct path: ~/.latios/tasks.json
+    let data_path = home_dir
+        .join(".latios")
+        .join("tasks.json");
+
+    Ok(data_path.to_string_lossy().to_string())
 }
