@@ -5,20 +5,21 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
-use crate::app::{App, FocusPane, InputMode};
+use crate::app::App;
+use crate::models::{FocusPane, InputMode};
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
-    // Main horizontal split: tasks (60%) and projects (40%)
+    // Main horizontal split: projects (60%) and tasks (40%)
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(60),  // Tasks pane
-            Constraint::Percentage(40),  // Projects pane
+            Constraint::Percentage(30),
+            Constraint::Percentage(70),
         ])
         .split(area);
 
-    render_tasks_pane(f, app, main_chunks[0]);
-    render_projects_pane(f, app, main_chunks[1]);
+    render_projects_pane(f, app, main_chunks[0]);
+    render_tasks_pane(f, app, main_chunks[1]);
 }
 
 fn render_tasks_pane(f: &mut Frame, app: &App, area: Rect) {
@@ -54,7 +55,7 @@ fn render_projects_pane(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_task_header(f: &mut Frame, app: &App, area: Rect) {
-    let is_focused = app.focused_pane == FocusPane::Tasks;
+    let is_focused = app.view_state.focused_pane == FocusPane::Tasks;
     let title = if let Some(pid) = &app.current_project_id {
         if let Some(project) = app.data.projects.get(pid) {
             format!("Tasks - Project: {}", project.name)
@@ -76,9 +77,9 @@ fn render_task_header(f: &mut Frame, app: &App, area: Rect) {
 fn render_task_list(f: &mut Frame, app: &App, area: Rect) {
     let mut tasks = app.data.get_tasks_by_project(app.current_project_id.as_deref());
     tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-    let is_focused = app.focused_pane == FocusPane::Tasks;
+    let is_focused = app.view_state.focused_pane == FocusPane::Tasks;
 
-    if app.input_mode == InputMode::Insert && is_focused {
+    if app.view_state.input_mode == InputMode::Insert && is_focused {
         // Show input prompt
         let input_area = Layout::default()
             .direction(Direction::Vertical)
@@ -95,7 +96,7 @@ fn render_task_list(f: &mut Frame, app: &App, area: Rect) {
             .map(|(i, task)| {
                 let checkbox = if task.completed { "[✓]" } else { "[ ]" };
                 let style = if i == app.selected_task_index {
-                    Style::default().bg(Color::DarkGray)
+                    Style::default().bg(Color::Cyan).fg(Color::Black)
                 } else if task.completed {
                     Style::default()
                         .fg(Color::DarkGray)
@@ -109,18 +110,19 @@ fn render_task_list(f: &mut Frame, app: &App, area: Rect) {
             })
             .collect();
 
+        let border_color = if is_focused { Color::Cyan } else { Color::White };
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Tasks"));
+            .block(Block::default().borders(Borders::ALL).title("Tasks").border_style(Style::default().fg(border_color)));
         f.render_widget(list, input_area[0]);
 
         // Render input box
-        let input = Paragraph::new(app.input_buffer.as_str())
+        let input = Paragraph::new(app.view_state.input_buffer.as_str())
             .style(Style::default().fg(Color::Yellow))
             .block(Block::default().borders(Borders::ALL).title("New Task"));
         f.render_widget(input, input_area[1]);
 
         // Show cursor
-        f.set_cursor_position((input_area[1].x + app.cursor_position as u16 + 1, input_area[1].y + 1));
+        f.set_cursor_position((input_area[1].x + app.view_state.cursor_position as u16 + 1, input_area[1].y + 1));
     } else {
         // Normal mode - just show tasks
         let items: Vec<ListItem> = tasks
@@ -130,7 +132,8 @@ fn render_task_list(f: &mut Frame, app: &App, area: Rect) {
                 let checkbox = if task.completed { "[✓]" } else { "[ ]" };
                 let style = if i == app.selected_task_index {
                     Style::default()
-                        .bg(Color::DarkGray)
+                        .bg(Color::Cyan)
+                        .fg(Color::Black)
                         .add_modifier(Modifier::BOLD)
                 } else if task.completed {
                     Style::default()
@@ -145,20 +148,21 @@ fn render_task_list(f: &mut Frame, app: &App, area: Rect) {
             })
             .collect();
 
+        let border_color = if is_focused { Color::Cyan } else { Color::White };
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Tasks"));
+            .block(Block::default().borders(Borders::ALL).title("Tasks").border_style(Style::default().fg(border_color)));
         f.render_widget(list, area);
     }
 }
 
 fn render_task_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let is_focused = app.focused_pane == FocusPane::Tasks;
-    let mode_text = match app.input_mode {
+    let is_focused = app.view_state.focused_pane == FocusPane::Tasks;
+    let mode_text = match app.view_state.input_mode {
         InputMode::Normal => "NORMAL",
         InputMode::Insert => "INSERT",
     };
 
-    let help_text = if app.input_mode == InputMode::Insert && is_focused {
+    let help_text = if app.view_state.input_mode == InputMode::Insert && is_focused {
         "ESC cancel | ENTER confirm"
     } else if is_focused {
         "TAB switch | a add | e edit | d delete | q quit"
@@ -196,7 +200,7 @@ fn render_task_status_bar(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_project_header(f: &mut Frame, app: &App, area: Rect) {
-    let is_focused = app.focused_pane == FocusPane::Projects;
+    let is_focused = app.view_state.focused_pane == FocusPane::Projects;
     let border_color = if is_focused { Color::Cyan } else { Color::White };
 
     let header = Paragraph::new("Projects")
@@ -208,9 +212,9 @@ fn render_project_header(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
     let projects = app.data.get_projects_sorted();
-    let is_focused = app.focused_pane == FocusPane::Projects;
+    let is_focused = app.view_state.focused_pane == FocusPane::Projects;
 
-    if app.input_mode == InputMode::Insert && is_focused {
+    if app.view_state.input_mode == InputMode::Insert && is_focused {
         // Show input prompt for adding new project
         let input_area = Layout::default()
             .direction(Direction::Vertical)
@@ -226,7 +230,7 @@ fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
             .enumerate()
             .map(|(i, project)| {
                 let style = if i == app.selected_project_index_in_pane {
-                    Style::default().bg(Color::DarkGray)
+                    Style::default().bg(Color::Magenta).fg(Color::Black)
                 } else {
                     Style::default()
                 };
@@ -235,18 +239,19 @@ fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
             })
             .collect();
 
+        let border_color = if is_focused { Color::Magenta } else { Color::White };
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Projects"));
+            .block(Block::default().borders(Borders::ALL).title("Projects").border_style(Style::default().fg(border_color)));
         f.render_widget(list, input_area[0]);
 
         // Render input box
-        let input = Paragraph::new(app.input_buffer.as_str())
+        let input = Paragraph::new(app.view_state.input_buffer.as_str())
             .style(Style::default().fg(Color::Yellow))
             .block(Block::default().borders(Borders::ALL).title("New Project"));
         f.render_widget(input, input_area[1]);
 
         // Show cursor
-        f.set_cursor_position((input_area[1].x + app.cursor_position as u16 + 1, input_area[1].y + 1));
+        f.set_cursor_position((input_area[1].x + app.view_state.cursor_position as u16 + 1, input_area[1].y + 1));
     } else {
         // Normal mode - just show projects
         let items: Vec<ListItem> = if projects.is_empty() {
@@ -258,7 +263,8 @@ fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
                 .map(|(i, project)| {
                     let style = if i == app.selected_project_index_in_pane {
                         Style::default()
-                            .bg(Color::DarkGray)
+                            .bg(Color::Magenta)
+                            .fg(Color::Black)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
@@ -269,20 +275,21 @@ fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
                 .collect()
         };
 
+        let border_color = if is_focused { Color::Magenta } else { Color::White };
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Projects"));
+            .block(Block::default().borders(Borders::ALL).title("Projects").border_style(Style::default().fg(border_color)));
         f.render_widget(list, area);
     }
 }
 
 fn render_project_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let is_focused = app.focused_pane == FocusPane::Projects;
-    let mode_text = match app.input_mode {
+    let is_focused = app.view_state.focused_pane == FocusPane::Projects;
+    let mode_text = match app.view_state.input_mode {
         InputMode::Normal => "NORMAL",
         InputMode::Insert => "INSERT",
     };
 
-    let help_text = if app.input_mode == InputMode::Insert && is_focused {
+    let help_text = if app.view_state.input_mode == InputMode::Insert && is_focused {
         "ESC cancel | ENTER confirm"
     } else if is_focused {
         "TAB switch | a add | e edit | d delete"

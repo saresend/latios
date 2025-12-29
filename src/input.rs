@@ -1,10 +1,11 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
-use crate::app::{App, AppView, FocusPane, InputMode};
+use crate::app::App;
+use crate::models::{AppView, FocusPane, InputMode, DetailEditField};
 
 pub fn handle_input(app: &mut App) -> anyhow::Result<()> {
     if event::poll(std::time::Duration::from_millis(100))? {
         if let Event::Key(key) = event::read()? {
-            match app.input_mode {
+            match app.view_state.input_mode {
                 InputMode::Normal => handle_normal_mode(app, key),
                 InputMode::Insert => handle_insert_mode(app, key),
             }
@@ -14,7 +15,7 @@ pub fn handle_input(app: &mut App) -> anyhow::Result<()> {
 }
 
 fn handle_normal_mode(app: &mut App, key: KeyEvent) {
-    match app.current_view {
+    match app.view_state.current_view {
         AppView::TaskList => handle_task_list_normal(app, key),
         AppView::TaskDetail => handle_task_detail_normal(app, key),
         AppView::ProjectDetail => handle_project_detail_normal(app, key),
@@ -24,7 +25,6 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_task_list_normal(app: &mut App, key: KeyEvent) {
-    // Tab key switches panes regardless of focus
     if key.code == KeyCode::Tab {
         app.switch_pane();
         return;
@@ -37,14 +37,13 @@ fn handle_task_list_normal(app: &mut App, key: KeyEvent) {
             return;
         }
         KeyCode::Char('?') => {
-            app.current_view = AppView::Help;
+            app.view_state.current_view = AppView::Help;
             return;
         }
         _ => {}
     }
 
-    // Route based on focused pane
-    match app.focused_pane {
+    match app.view_state.focused_pane {
         FocusPane::Tasks => handle_tasks_pane_normal(app, key),
         FocusPane::Projects => handle_projects_pane_normal(app, key),
     }
@@ -167,51 +166,51 @@ fn delete_from_current_list(app: &mut App) {
 
 fn handle_help_view(app: &mut App, _key: KeyEvent) {
     // Any key returns to task list
-    app.current_view = AppView::TaskList;
+    app.view_state.current_view = AppView::TaskList;
 }
 
 fn handle_insert_mode(app: &mut App, key: KeyEvent) {
-    use crate::app::DetailEditField;
-
-    // Check if we're editing a multiline description
-    let is_multiline_editing = matches!(
-        app.detail_editing_field,
-        Some(DetailEditField::Description) | Some(DetailEditField::ProjectDescription)
-    );
-
     match key.code {
         KeyCode::Esc => cancel_current_edit(app),
         KeyCode::Enter => handle_enter_in_edit_mode(app),
         KeyCode::Up => {
-            // Navigate to previous line when editing descriptions
-            if is_multiline_editing {
-                app.move_to_previous_line();
+            if let Some(edit_state) = &mut app.view_state.description_edit_state {
+                edit_state.move_cursor_up();
             }
         }
         KeyCode::Down => {
-            // Navigate to next line when editing descriptions
-            if is_multiline_editing {
-                app.move_to_next_line();
+            if let Some(edit_state) = &mut app.view_state.description_edit_state {
+                edit_state.move_cursor_down();
             }
         }
         KeyCode::Char(c) => {
-            app.input_buffer.insert(app.cursor_position, c);
-            app.cursor_position += 1;
+            if let Some(edit_state) = &mut app.view_state.description_edit_state {
+                edit_state.insert_char(c);
+            } else {
+                app.view_state.input_buffer.insert(app.view_state.cursor_position, c);
+                app.view_state.cursor_position += 1;
+            }
         }
         KeyCode::Backspace => {
-            if app.cursor_position > 0 {
-                app.input_buffer.remove(app.cursor_position - 1);
-                app.cursor_position -= 1;
+            if let Some(edit_state) = &mut app.view_state.description_edit_state {
+                edit_state.backspace();
+            } else if app.view_state.cursor_position > 0 {
+                app.view_state.input_buffer.remove(app.view_state.cursor_position - 1);
+                app.view_state.cursor_position -= 1;
             }
         }
         KeyCode::Left => {
-            if app.cursor_position > 0 {
-                app.cursor_position -= 1;
+            if let Some(edit_state) = &mut app.view_state.description_edit_state {
+                edit_state.move_cursor_left();
+            } else if app.view_state.cursor_position > 0 {
+                app.view_state.cursor_position -= 1;
             }
         }
         KeyCode::Right => {
-            if app.cursor_position < app.input_buffer.len() {
-                app.cursor_position += 1;
+            if let Some(edit_state) = &mut app.view_state.description_edit_state {
+                edit_state.move_cursor_right();
+            } else if app.view_state.cursor_position < app.view_state.input_buffer.len() {
+                app.view_state.cursor_position += 1;
             }
         }
         _ => {}
@@ -219,34 +218,20 @@ fn handle_insert_mode(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_enter_in_edit_mode(app: &mut App) {
-    use crate::app::DetailEditField;
-
-    match &app.detail_editing_field {
+    match &app.view_state.detail_editing_field {
         Some(DetailEditField::Title) => app.save_title_edit(),
         Some(DetailEditField::AddingTag) => app.save_new_tag(),
         Some(DetailEditField::AddingFileRef) => app.advance_file_ref_step(),
-        Some(DetailEditField::Description) => {
-            // For description, save current line and start a new line
-            if let Some(last_line) = app.multiline_buffer.last_mut() {
-                *last_line = app.input_buffer.clone();
+        Some(DetailEditField::Description) | Some(DetailEditField::ProjectDescription) => {
+            // Insert newline in the description editor
+            if let Some(edit_state) = &mut app.view_state.description_edit_state {
+                edit_state.insert_newline();
             }
-            app.multiline_buffer.push(String::new());
-            app.input_buffer.clear();
-            app.cursor_position = 0;
         }
         Some(DetailEditField::ProjectName) => app.save_project_name_edit(),
-        Some(DetailEditField::ProjectDescription) => {
-            // For project description, same as task description
-            if let Some(last_line) = app.multiline_buffer.last_mut() {
-                *last_line = app.input_buffer.clone();
-            }
-            app.multiline_buffer.push(String::new());
-            app.input_buffer.clear();
-            app.cursor_position = 0;
-        }
         None => {
             // Route based on focused pane
-            match app.focused_pane {
+            match app.view_state.focused_pane {
                 FocusPane::Tasks => app.confirm_add_task(),
                 FocusPane::Projects => app.confirm_add_project(),
             }
@@ -255,19 +240,16 @@ fn handle_enter_in_edit_mode(app: &mut App) {
 }
 
 fn cancel_current_edit(app: &mut App) {
-    use crate::app::DetailEditField;
-
     // For description editing, ESC saves the changes
-    if app.detail_editing_field == Some(DetailEditField::Description) {
+    if app.view_state.detail_editing_field == Some(DetailEditField::Description) {
         app.save_description_edit();
-    } else if app.detail_editing_field == Some(DetailEditField::ProjectDescription) {
+    } else if app.view_state.detail_editing_field == Some(DetailEditField::ProjectDescription) {
         app.save_project_description_edit();
-    } else if app.detail_editing_field.is_some() {
+    } else if app.view_state.detail_editing_field.is_some() {
         // For other edit fields, ESC cancels
-        app.detail_editing_field = None;
-        app.input_mode = InputMode::Normal;
-        app.input_buffer.clear();
-        app.multiline_buffer.clear();
+        app.view_state.detail_editing_field = None;
+        app.view_state.input_mode = InputMode::Normal;
+        app.view_state.input_buffer.clear();
     } else {
         app.cancel_input();
     }

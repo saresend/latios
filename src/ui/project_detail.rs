@@ -5,7 +5,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
-use crate::app::{App, DetailEditField, InputMode};
+use crate::app::App;
+use crate::models::{DetailEditField, InputMode};
 use crate::markdown;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
@@ -37,18 +38,18 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_name_section(f: &mut Frame, app: &App, project: &crate::models::Project, area: Rect) {
     let is_selected = app.detail_field_selection == 0;
-    let is_editing = app.detail_editing_field == Some(DetailEditField::ProjectName);
+    let is_editing = app.view_state.detail_editing_field == Some(DetailEditField::ProjectName);
 
     if is_editing {
         // Show input box when editing
-        let input = Paragraph::new(app.input_buffer.as_str())
+        let input = Paragraph::new(app.view_state.input_buffer.as_str())
             .style(Style::default().fg(Color::Yellow))
             .block(Block::default().borders(Borders::ALL).title("Name (editing)"));
         f.render_widget(input, area);
 
         // Set cursor position
-        if app.input_mode == InputMode::Insert {
-            f.set_cursor_position((area.x + app.cursor_position as u16 + 1, area.y + 1));
+        if app.view_state.input_mode == InputMode::Insert {
+            f.set_cursor_position((area.x + app.view_state.cursor_position as u16 + 1, area.y + 1));
         }
     } else {
         // Show read-only view
@@ -68,32 +69,27 @@ fn render_name_section(f: &mut Frame, app: &App, project: &crate::models::Projec
 
 fn render_description_section(f: &mut Frame, app: &App, project: &crate::models::Project, area: Rect) {
     let is_selected = app.detail_field_selection == 1;
-    let is_editing = app.detail_editing_field == Some(DetailEditField::ProjectDescription);
+    let is_editing = app.view_state.detail_editing_field == Some(DetailEditField::ProjectDescription);
 
     if is_editing {
-        // Show multiline editor when editing
-        let mut all_lines = app.multiline_buffer.clone();
-        // Update the current line being edited
-        if app.current_editing_line_index < all_lines.len() {
-            all_lines[app.current_editing_line_index] = app.input_buffer.clone();
-        }
-        let desc_text = all_lines.join("\n");
+        if let Some(edit_state) = &app.view_state.description_edit_state {
+            let description = Paragraph::new(edit_state.text())
+                .style(Style::default().fg(Color::Yellow))
+                .wrap(Wrap { trim: false })
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title("Description (editing - Enter for newline, ESC to save)"));
 
-        let description = Paragraph::new(desc_text)
-            .style(Style::default().fg(Color::Yellow))
-            .wrap(Wrap { trim: false })
-            .block(Block::default()
-                .borders(Borders::ALL)
-                .title("Description (editing - Up/Down to navigate lines, Enter for newline, ESC to save)"));
+            f.render_widget(description, area);
 
-        f.render_widget(description, area);
-
-        // Set cursor position - show cursor on the current line being edited
-        if app.input_mode == InputMode::Insert {
-            f.set_cursor_position((
-                area.x + app.cursor_position as u16 + 1,
-                area.y + app.current_editing_line_index as u16 + 1,
-            ));
+            // Calculate cursor position
+            if app.view_state.input_mode == InputMode::Insert {
+                let (line, col) = edit_state.cursor_position();
+                f.set_cursor_position((
+                    area.x + col as u16 + 1,
+                    area.y + line as u16 + 1,
+                ));
+            }
         }
     } else {
         // Show read-only view
@@ -136,9 +132,9 @@ fn render_metadata_section(f: &mut Frame, project: &crate::models::Project, area
 }
 
 fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let (mode_text, help_text) = if app.input_mode == InputMode::Insert {
+    let (mode_text, help_text) = if app.view_state.input_mode == InputMode::Insert {
         // Context-specific help for insert mode
-        match &app.detail_editing_field {
+        match &app.view_state.detail_editing_field {
             Some(DetailEditField::ProjectName) => {
                 ("INSERT", "Enter save | ESC cancel")
             },
@@ -154,7 +150,7 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ("NORMAL", "ESC/q back | j/k navigate | Tab next | i/Enter edit")
     };
 
-    let mode_color = if app.input_mode == InputMode::Insert {
+    let mode_color = if app.view_state.input_mode == InputMode::Insert {
         Color::Green
     } else {
         Color::Blue

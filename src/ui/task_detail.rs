@@ -5,7 +5,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use crate::app::{App, DetailEditField, InputMode};
+use crate::app::App;
+use crate::models::{DetailEditField, InputMode};
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let task = match app.get_editing_task() {
@@ -38,18 +39,18 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_title_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 0;
-    let is_editing = app.detail_editing_field == Some(DetailEditField::Title);
+    let is_editing = app.view_state.detail_editing_field == Some(DetailEditField::Title);
 
     if is_editing {
         // Show input box when editing
-        let input = Paragraph::new(app.input_buffer.as_str())
+        let input = Paragraph::new(app.view_state.input_buffer.as_str())
             .style(Style::default().fg(Color::Yellow))
             .block(Block::default().borders(Borders::ALL).title("Title (editing)"));
         f.render_widget(input, area);
 
         // Set cursor position
-        if app.input_mode == InputMode::Insert {
-            f.set_cursor_position((area.x + app.cursor_position as u16 + 1, area.y + 1));
+        if app.view_state.input_mode == InputMode::Insert {
+            f.set_cursor_position((area.x + app.view_state.cursor_position as u16 + 1, area.y + 1));
         }
     } else {
         // Show read-only view
@@ -72,33 +73,27 @@ fn render_title_section(f: &mut Frame, app: &App, task: &crate::models::Task, ar
 
 fn render_description_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 1;
-    let is_editing = app.detail_editing_field == Some(DetailEditField::Description);
+    let is_editing = app.view_state.detail_editing_field == Some(DetailEditField::Description);
 
     if is_editing {
-        // Show multiline editor when editing
-        // Combine completed lines with current line being edited
-        let mut all_lines = app.multiline_buffer.clone();
-        // Update the current line being edited
-        if app.current_editing_line_index < all_lines.len() {
-            all_lines[app.current_editing_line_index] = app.input_buffer.clone();
-        }
-        let desc_text = all_lines.join("\n");
+        if let Some(edit_state) = &app.view_state.description_edit_state {
+            let description = Paragraph::new(edit_state.text())
+                .style(Style::default().fg(Color::Yellow))
+                .wrap(Wrap { trim: false })
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .title("Description (editing - Enter for newline, ESC to save)"));
 
-        let description = Paragraph::new(desc_text)
-            .style(Style::default().fg(Color::Yellow))
-            .wrap(Wrap { trim: false })
-            .block(Block::default()
-                .borders(Borders::ALL)
-                .title("Description (editing - Up/Down to navigate lines, Enter for newline, ESC to save)"));
+            f.render_widget(description, area);
 
-        f.render_widget(description, area);
-
-        // Set cursor position - show cursor on the current line being edited
-        if app.input_mode == InputMode::Insert {
-            f.set_cursor_position((
-                area.x + app.cursor_position as u16 + 1,
-                area.y + app.current_editing_line_index as u16 + 1,
-            ));
+            // Calculate cursor position
+            if app.view_state.input_mode == InputMode::Insert {
+                let (line, col) = edit_state.cursor_position();
+                f.set_cursor_position((
+                    area.x + col as u16 + 1,
+                    area.y + line as u16 + 1,
+                ));
+            }
         }
     } else {
         // Show read-only view
@@ -127,19 +122,19 @@ fn render_description_section(f: &mut Frame, app: &App, task: &crate::models::Ta
 
 fn render_tags_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 2;
-    let is_adding = app.detail_editing_field == Some(DetailEditField::AddingTag);
+    let is_adding = app.view_state.detail_editing_field == Some(DetailEditField::AddingTag);
 
     if is_adding {
         // Show input prompt when adding a tag
-        let prompt = format!("Add tag: {}", app.input_buffer);
+        let prompt = format!("Add tag: {}", app.view_state.input_buffer);
         let input = Paragraph::new(prompt)
             .style(Style::default().fg(Color::Yellow))
             .block(Block::default().borders(Borders::ALL).title("Tags (adding)"));
         f.render_widget(input, area);
 
         // Set cursor position
-        if app.input_mode == InputMode::Insert {
-            f.set_cursor_position((area.x + app.cursor_position as u16 + 10, area.y + 1)); // +10 for "Add tag: "
+        if app.view_state.input_mode == InputMode::Insert {
+            f.set_cursor_position((area.x + app.view_state.cursor_position as u16 + 10, area.y + 1)); // +10 for "Add tag: "
         }
     } else {
         // Show as a list with selection
@@ -181,7 +176,7 @@ fn render_tags_section(f: &mut Frame, app: &App, task: &crate::models::Task, are
 
 fn render_file_refs_section(f: &mut Frame, app: &App, task: &crate::models::Task, area: Rect) {
     let is_selected = app.detail_field_selection == 3;
-    let is_adding = app.detail_editing_field == Some(DetailEditField::AddingFileRef);
+    let is_adding = app.view_state.detail_editing_field == Some(DetailEditField::AddingFileRef);
 
     if is_adding {
         // Show multi-step input form
@@ -192,7 +187,7 @@ fn render_file_refs_section(f: &mut Frame, app: &App, task: &crate::models::Task
             _ => ("", ""),
         };
 
-        let input_text = format!("{}{}", prompt, app.input_buffer);
+        let input_text = format!("{}{}", prompt, app.view_state.input_buffer);
         let title = format!("File References (adding - step {}/3: {})", app.file_ref_input_step + 1, hint);
 
         let input = Paragraph::new(input_text)
@@ -201,8 +196,8 @@ fn render_file_refs_section(f: &mut Frame, app: &App, task: &crate::models::Task
         f.render_widget(input, area);
 
         // Set cursor position
-        if app.input_mode == InputMode::Insert {
-            f.set_cursor_position((area.x + app.cursor_position as u16 + prompt.len() as u16 + 1, area.y + 1));
+        if app.view_state.input_mode == InputMode::Insert {
+            f.set_cursor_position((area.x + app.view_state.cursor_position as u16 + prompt.len() as u16 + 1, area.y + 1));
         }
     } else {
         // Show as a list with selection
@@ -251,9 +246,9 @@ fn render_file_refs_section(f: &mut Frame, app: &App, task: &crate::models::Task
 
 
 fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let (mode_text, help_text) = if app.input_mode == InputMode::Insert {
+    let (mode_text, help_text) = if app.view_state.input_mode == InputMode::Insert {
         // Context-specific help for insert mode
-        match &app.detail_editing_field {
+        match &app.view_state.detail_editing_field {
             Some(DetailEditField::Title) => {
                 ("INSERT", "Enter save | ESC cancel")
             },
@@ -281,7 +276,7 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ("NORMAL", "ESC/q back | j/k navigate | Tab next | i/Enter edit | a add")
     };
 
-    let mode_color = if app.input_mode == InputMode::Insert {
+    let mode_color = if app.view_state.input_mode == InputMode::Insert {
         Color::Green
     } else {
         Color::Blue
