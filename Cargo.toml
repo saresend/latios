@@ -1,6 +1,6 @@
 [package]
 name = "latios"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "latios is a simple todo tui application designed"
 license = "MIT"
