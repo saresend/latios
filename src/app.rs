@@ -12,6 +12,7 @@ pub struct App {
     pub current_project_id: Option<String>,
     pub selected_project_index: usize,
 
+    // Index 0 = "All Projects", 1+ = actual projects
     pub selected_project_index_in_pane: usize,
     pub project_list_scroll: usize,
 
@@ -30,6 +31,10 @@ pub struct App {
     // Status message
     pub status_message: Option<String>,
     pub status_timestamp: Option<std::time::Instant>,
+
+    // PocketBase sync
+    pub sync_enabled: bool,
+    pub startup_message: Option<String>,
 }
 
 impl App {
@@ -55,6 +60,8 @@ impl App {
             data_file_path,
             status_message: None,
             status_timestamp: None,
+            sync_enabled: false,
+            startup_message: None,
         }
     }
 
@@ -115,11 +122,23 @@ impl App {
 
     pub fn confirm_add_task(&mut self) {
         if !self.view_state.input_buffer.is_empty() {
-            let mut task = crate::models::Task::new(self.view_state.input_buffer.clone());
-            task.project_id = self.current_project_id.clone();
-            self.data.add_task(task);
-            self.view_state.input_buffer.clear();
-            self.view_state.input_mode = InputMode::Normal;
+            // Get the project ID from the currently selected project in the pane
+            let project_id = self.get_selected_project_id();
+
+            if let Some(pid) = project_id {
+                let task = crate::models::Task::new(
+                    self.view_state.input_buffer.clone(),
+                    pid,
+                );
+                self.data.add_task(task);
+                self.view_state.input_buffer.clear();
+                self.view_state.input_mode = InputMode::Normal;
+            } else {
+                // No project selected - show error
+                self.set_status("Select a project first".to_string());
+                self.view_state.input_buffer.clear();
+                self.view_state.input_mode = InputMode::Normal;
+            }
         }
     }
 
@@ -381,10 +400,13 @@ impl App {
     }
 
     // Project navigation
+    // Index 0 = "All Projects", 1+ = actual projects
     pub fn next_project(&mut self) {
         let project_count = self.data.get_projects_sorted().len();
-        if project_count > 0 {
-            self.selected_project_index_in_pane = (self.selected_project_index_in_pane + 1).min(project_count - 1);
+        // Max index is project_count (because index 0 is "All Projects")
+        let max_index = project_count;
+        if self.selected_project_index_in_pane < max_index {
+            self.selected_project_index_in_pane += 1;
         }
     }
 
@@ -394,19 +416,35 @@ impl App {
         }
     }
 
+    /// Get the project ID of the currently selected project in the pane.
+    /// Returns None if "All Projects" (index 0) is selected.
     pub fn get_selected_project_id(&self) -> Option<String> {
+        if self.selected_project_index_in_pane == 0 {
+            return None; // "All Projects" selected
+        }
         let projects = self.data.get_projects_sorted();
-        projects.get(self.selected_project_index_in_pane).map(|p| p.id.clone())
+        // Subtract 1 to account for "All Projects" at index 0
+        projects.get(self.selected_project_index_in_pane - 1).map(|p| p.id.clone())
+    }
+
+    /// Select the currently highlighted project as the active filter.
+    /// Index 0 = All Projects (None), Index 1+ = specific project
+    pub fn select_project_as_filter(&mut self) {
+        self.current_project_id = self.get_selected_project_id();
+        // Reset task selection when changing filter
+        self.selected_task_index = 0;
+        self.task_list_scroll = 0;
     }
 
     // Project operations
     pub fn delete_selected_project(&mut self) {
         if let Some(project_id) = self.get_selected_project_id() {
             self.data.remove_project(&project_id);
-            // Adjust selection if needed
+            // Adjust selection if needed (account for "All Projects" at index 0)
             let project_count = self.data.get_projects_sorted().len();
-            if self.selected_project_index_in_pane >= project_count && project_count > 0 {
-                self.selected_project_index_in_pane = project_count - 1;
+            // Max valid index is project_count (since index 0 is "All Projects")
+            if self.selected_project_index_in_pane > project_count {
+                self.selected_project_index_in_pane = project_count;
             }
         }
     }

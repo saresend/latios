@@ -68,7 +68,8 @@ fn handle_projects_pane_normal(app: &mut App, key: KeyEvent) {
         KeyCode::Char('j') | KeyCode::Down => app.next_project(),
         KeyCode::Char('k') | KeyCode::Up => app.previous_project(),
         KeyCode::Char('a') => app.start_add_project(),
-        KeyCode::Char('e') | KeyCode::Enter => app.start_edit_project(),
+        KeyCode::Enter | KeyCode::Char('f') => app.select_project_as_filter(),
+        KeyCode::Char('e') => app.start_edit_project(),
         KeyCode::Char('d') => app.delete_selected_project(),
         _ => {}
     }
@@ -298,10 +299,8 @@ fn format_task_for_clipboard(task: &crate::models::Task, data: &crate::models::A
     output.push_str(&format!("**Created:** {}\n", task.created_at));
 
     // Project
-    if let Some(pid) = &task.project_id {
-        if let Some(project) = data.get_project(pid) {
-            output.push_str(&format!("**Project:** {}\n", project.name));
-        }
+    if let Some(project) = data.get_project(&task.project_id) {
+        output.push_str(&format!("**Project:** {}\n", project.name));
     }
 
     // Tags

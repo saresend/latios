@@ -56,10 +56,8 @@ fn export_task_to_markdown(markdown: &mut String, task: &Task, data: &AppData) {
     }
 
     // Project
-    if let Some(pid) = &task.project_id {
-        if let Some(project) = data.projects.get(pid) {
-            markdown.push_str(&format!("**Project:** {}\n", project.name));
-        }
+    if let Some(project) = data.projects.get(&task.project_id) {
+        markdown.push_str(&format!("**Project:** {}\n", project.name));
     }
 
     // Tags

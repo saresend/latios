@@ -56,19 +56,25 @@ fn render_projects_pane(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_task_header(f: &mut Frame, app: &App, area: Rect) {
     let is_focused = app.view_state.focused_pane == FocusPane::Tasks;
-    let title = if let Some(pid) = &app.current_project_id {
+    let border_color = if is_focused { Color::Cyan } else { Color::White };
+
+    // Build title with optional filter badge
+    let title_spans = if let Some(pid) = &app.current_project_id {
         if let Some(project) = app.data.projects.get(pid) {
-            format!("Tasks - Project: {}", project.name)
+            vec![
+                Span::styled("Tasks ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::raw("["),
+                Span::styled(&project.name, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::raw("]"),
+            ]
         } else {
-            "Tasks - All".to_string()
+            vec![Span::styled("Tasks - All", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]
         }
     } else {
-        "Tasks - All".to_string()
+        vec![Span::styled("Tasks - All", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]
     };
 
-    let border_color = if is_focused { Color::Cyan } else { Color::White };
-    let header = Paragraph::new(title)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+    let header = Paragraph::new(Line::from(title_spans))
         .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(border_color)));
 
     f.render_widget(header, area);
@@ -170,6 +176,13 @@ fn render_task_status_bar(f: &mut Frame, app: &App, area: Rect) {
         "TAB switch to tasks"
     };
 
+    // Sync status indicator
+    let sync_indicator = if app.sync_enabled {
+        Span::styled(" [SYNC] ", Style::default().fg(Color::Green))
+    } else {
+        Span::styled(" [LOCAL] ", Style::default().fg(Color::DarkGray))
+    };
+
     let status = if let Some(msg) = &app.status_message {
         Paragraph::new(vec![
             Line::from(vec![
@@ -177,7 +190,7 @@ fn render_task_status_bar(f: &mut Frame, app: &App, area: Rect) {
                     format!(" {} ", mode_text),
                     Style::default().bg(Color::Blue).fg(Color::White),
                 ),
-                Span::raw(" "),
+                sync_indicator,
                 Span::styled(msg, Style::default().fg(Color::Green)),
             ]),
         ])
@@ -189,7 +202,7 @@ fn render_task_status_bar(f: &mut Frame, app: &App, area: Rect) {
                     format!(" {} ", mode_text),
                     Style::default().bg(Color::Blue).fg(Color::White),
                 ),
-                Span::raw(" "),
+                sync_indicator,
                 Span::raw(help_text),
             ]),
         ])
@@ -214,6 +227,12 @@ fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
     let projects = app.data.get_projects_sorted();
     let is_focused = app.view_state.focused_pane == FocusPane::Projects;
 
+    // Count all tasks for "All Projects"
+    let all_tasks_count = app.data.tasks.len();
+
+    // Check if "All Projects" is the active filter
+    let is_all_active = app.current_project_id.is_none();
+
     if app.view_state.input_mode == InputMode::Insert && is_focused {
         // Show input prompt for adding new project
         let input_area = Layout::default()
@@ -224,20 +243,40 @@ fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
             ])
             .split(area);
 
-        // Render existing projects
-        let items: Vec<ListItem> = projects
-            .iter()
-            .enumerate()
-            .map(|(i, project)| {
-                let style = if i == app.selected_project_index_in_pane {
-                    Style::default().bg(Color::Magenta).fg(Color::Black)
-                } else {
-                    Style::default()
-                };
-                let content = format!("• {}", project.name);
-                ListItem::new(content).style(style)
-            })
-            .collect();
+        // Build items list with "All Projects" first
+        let mut items: Vec<ListItem> = Vec::new();
+
+        // "All Projects" item (index 0)
+        let is_all_selected = app.selected_project_index_in_pane == 0;
+        let all_prefix = if is_all_active { ">" } else { " " };
+        let all_style = if is_all_selected {
+            Style::default().bg(Color::Magenta).fg(Color::Black).add_modifier(Modifier::BOLD)
+        } else if is_all_active {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        items.push(ListItem::new(format!("{} All Projects ({})", all_prefix, all_tasks_count)).style(all_style));
+
+        // Project items (index 1+)
+        for (i, project) in projects.iter().enumerate() {
+            let task_count = app.data.tasks.values()
+                .filter(|t| t.project_id == project.id)
+                .count();
+            let is_selected = app.selected_project_index_in_pane == i + 1;
+            let is_active = app.current_project_id.as_deref() == Some(&project.id);
+            let prefix = if is_active { ">" } else { " " };
+
+            let style = if is_selected {
+                Style::default().bg(Color::Magenta).fg(Color::Black).add_modifier(Modifier::BOLD)
+            } else if is_active {
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            items.push(ListItem::new(format!("{} {} ({})", prefix, project.name, task_count)).style(style));
+        }
 
         let border_color = if is_focused { Color::Magenta } else { Color::White };
         let list = List::new(items)
@@ -253,27 +292,40 @@ fn render_project_list(f: &mut Frame, app: &App, area: Rect) {
         // Show cursor
         f.set_cursor_position((input_area[1].x + app.view_state.cursor_position as u16 + 1, input_area[1].y + 1));
     } else {
-        // Normal mode - just show projects
-        let items: Vec<ListItem> = if projects.is_empty() {
-            vec![ListItem::new("(No projects - press 'a' to add)").style(Style::default().fg(Color::DarkGray))]
+        // Normal mode - show projects with "All Projects" first
+        let mut items: Vec<ListItem> = Vec::new();
+
+        // "All Projects" item (index 0)
+        let is_all_selected = app.selected_project_index_in_pane == 0;
+        let all_prefix = if is_all_active { ">" } else { " " };
+        let all_style = if is_all_selected && is_focused {
+            Style::default().bg(Color::Magenta).fg(Color::Black).add_modifier(Modifier::BOLD)
+        } else if is_all_active {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
         } else {
-            projects
-                .iter()
-                .enumerate()
-                .map(|(i, project)| {
-                    let style = if i == app.selected_project_index_in_pane {
-                        Style::default()
-                            .bg(Color::Magenta)
-                            .fg(Color::Black)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default()
-                    };
-                    let content = format!("• {}", project.name);
-                    ListItem::new(content).style(style)
-                })
-                .collect()
+            Style::default()
         };
+        items.push(ListItem::new(format!("{} All Projects ({})", all_prefix, all_tasks_count)).style(all_style));
+
+        // Project items (index 1+)
+        for (i, project) in projects.iter().enumerate() {
+            let task_count = app.data.tasks.values()
+                .filter(|t| t.project_id == project.id)
+                .count();
+            let is_selected = app.selected_project_index_in_pane == i + 1;
+            let is_active = app.current_project_id.as_deref() == Some(&project.id);
+            let prefix = if is_active { ">" } else { " " };
+
+            let style = if is_selected && is_focused {
+                Style::default().bg(Color::Magenta).fg(Color::Black).add_modifier(Modifier::BOLD)
+            } else if is_active {
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            items.push(ListItem::new(format!("{} {} ({})", prefix, project.name, task_count)).style(style));
+        }
 
         let border_color = if is_focused { Color::Magenta } else { Color::White };
         let list = List::new(items)
@@ -292,7 +344,7 @@ fn render_project_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let help_text = if app.view_state.input_mode == InputMode::Insert && is_focused {
         "ESC cancel | ENTER confirm"
     } else if is_focused {
-        "TAB switch | a add | e edit | d delete"
+        "ENTER filter | a add | e edit | d delete"
     } else {
         "TAB switch to projects"
     };

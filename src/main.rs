@@ -25,6 +25,17 @@ fn main() -> anyhow::Result<()> {
     let mut app = App::new(data_path.clone());
     app.data = storage::json::load_data(&data_path)?;
 
+    // Load PocketBase config and attempt sync from server
+    let pb_config = storage::pocketbase::load_config().unwrap_or_default();
+    app.sync_enabled = pb_config.enabled;
+
+    if pb_config.enabled {
+        let sync_result = storage::pocketbase::sync_from_server(&pb_config, &mut app.data);
+        if let Some(err) = sync_result.error {
+            app.startup_message = Some(format!("Sync: {}", err));
+        }
+    }
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -40,7 +51,12 @@ fn main() -> anyhow::Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    // Save data before exiting
+    // Sync to server if enabled (before saving locally)
+    if pb_config.enabled {
+        let _ = storage::pocketbase::sync_to_server(&pb_config, &mut app.data);
+    }
+
+    // Always save data locally before exiting
     storage::json::save_data(&data_path, &app.data)?;
 
     result

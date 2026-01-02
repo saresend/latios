@@ -20,14 +20,16 @@ impl Default for AppData {
 }
 
 impl AppData {
+    /// Get tasks filtered by project.
+    /// If project_id is None, returns all tasks.
+    /// If project_id is Some(pid), returns only tasks for that project.
     pub fn get_tasks_by_project(&self, project_id: Option<&str>) -> Vec<&Task> {
         self.tasks
             .values()
             .filter(|t| {
-                match (project_id, &t.project_id) {
-                    (None, None) => true,
-                    (Some(pid), Some(tpid)) => pid == tpid,
-                    _ => false,
+                match project_id {
+                    None => true, // Show all tasks
+                    Some(pid) => t.project_id == pid,
                 }
             })
             .collect()
@@ -37,13 +39,28 @@ impl AppData {
         self.tasks
             .values_mut()
             .filter(|t| {
-                match (project_id, &t.project_id) {
-                    (None, None) => true,
-                    (Some(pid), Some(tpid)) => pid == tpid,
-                    _ => false,
+                match project_id {
+                    None => true, // Show all tasks
+                    Some(pid) => t.project_id == pid,
                 }
             })
             .collect()
+    }
+
+    pub fn find_task_by_remote_id(&self, remote_id: &str) -> Option<&Task> {
+        self.tasks.values().find(|t| t.remote_id.as_deref() == Some(remote_id))
+    }
+
+    pub fn find_task_by_remote_id_mut(&mut self, remote_id: &str) -> Option<&mut Task> {
+        self.tasks.values_mut().find(|t| t.remote_id.as_deref() == Some(remote_id))
+    }
+
+    pub fn find_project_by_remote_id(&self, remote_id: &str) -> Option<&Project> {
+        self.projects.values().find(|p| p.remote_id.as_deref() == Some(remote_id))
+    }
+
+    pub fn find_project_by_remote_id_mut(&mut self, remote_id: &str) -> Option<&mut Project> {
+        self.projects.values_mut().find(|p| p.remote_id.as_deref() == Some(remote_id))
     }
 
     pub fn add_task(&mut self, task: Task) {

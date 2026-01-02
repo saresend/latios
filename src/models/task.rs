@@ -3,10 +3,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_id: Option<String>,
     pub title: String,
     pub description: String,
     pub completed: bool,
-    pub project_id: Option<String>,
+    pub project_id: String,
     pub tags: Vec<String>,
     pub file_references: Vec<FileReference>,
     pub created_at: String,
@@ -23,14 +25,15 @@ pub struct FileReference {
 
 
 impl Task {
-    pub fn new(title: String) -> Self {
+    pub fn new(title: String, project_id: String) -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
+            remote_id: None,
             title,
             description: String::new(),
             completed: false,
-            project_id: None,
+            project_id,
             tags: Vec::new(),
             file_references: Vec::new(),
             created_at: now.clone(),

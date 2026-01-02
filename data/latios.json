@@ -1,0 +1,57 @@
+{
+  "tasks": {
+    "1f9774a2-9e66-4ec4-a8ce-d422124794be": {
+      "id": "1f9774a2-9e66-4ec4-a8ce-d422124794be",
+      "title": "Fix Description state management for projects",
+      "description": "\n\n",
+      "completed": true,
+      "project_id": null,
+      "tags": [],
+      "file_references": [],
+      "created_at": "2025-12-28T23:54:15.265485+00:00",
+      "updated_at": "2025-12-29T16:30:31.710254+00:00",
+      "completed_at": "2025-12-29T16:30:31.710259+00:00"
+    },
+    "58134355-444c-433a-a5dd-7169242a801e": {
+      "id": "58134355-444c-433a-a5dd-7169242a801e",
+      "title": "Connect task data to some server client",
+      "description": "## server state saving \nWe should persist what ever state changes are made to a server somewhere so that I can save this task list across machines. ",
+      "completed": false,
+      "project_id": null,
+      "tags": [],
+      "file_references": [],
+      "created_at": "2025-12-29T00:47:04.738896+00:00",
+      "updated_at": "2025-12-29T00:48:12.944681+00:00",
+      "completed_at": null
+    },
+    "93e6c969-8ddd-47a3-b5e7-c504f0fbdddc": {
+      "id": "93e6c969-8ddd-47a3-b5e7-c504f0fbdddc",
+      "title": "Map out tasks for v3 migration",
+      "description": "",
+      "completed": false,
+      "project_id": null,
+      "tags": [],
+      "file_references": [],
+      "created_at": "2025-12-29T16:32:06.850690+00:00",
+      "updated_at": "2025-12-29T16:32:06.850690+00:00",
+      "completed_at": null
+    }
+  },
+  "projects": {
+    "f622492f-6a25-43d1-b9be-8069a978c6e1": {
+      "id": "f622492f-6a25-43d1-b9be-8069a978c6e1",
+      "name": "V3 Temporal Migration",
+      "description": "\n",
+      "created_at": "2025-12-28T23:37:25.711106+00:00",
+      "updated_at": "2025-12-29T00:08:25.968393+00:00"
+    },
+    "fbb89cbc-757f-4a01-93ee-e0a5e3ac4af5": {
+      "id": "fbb89cbc-757f-4a01-93ee-e0a5e3ac4af5",
+      "name": "Task TUI",
+      "description": "\n",
+      "created_at": "2025-12-29T00:08:56.746863+00:00",
+      "updated_at": "2025-12-29T00:09:36.179891+00:00"
+    }
+  },
+  "version": "1.0.0"
+}
