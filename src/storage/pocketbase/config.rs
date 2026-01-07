@@ -18,8 +18,8 @@ impl Default for PocketBaseConfig {
 }
 
 pub fn get_config_file_path() -> anyhow::Result<String> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
     let config_path = home.join(".latios").join("config.json");
     Ok(config_path.to_string_lossy().to_string())
 }

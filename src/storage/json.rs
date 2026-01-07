@@ -11,11 +11,10 @@ pub fn load_data(path: &str) -> Result<AppData> {
         return Ok(default_data);
     }
 
-    let contents = fs::read_to_string(path)
-        .context(format!("Failed to read data file: {}", path))?;
+    let contents =
+        fs::read_to_string(path).context(format!("Failed to read data file: {}", path))?;
 
-    let data: AppData = serde_json::from_str(&contents)
-        .context("Failed to parse JSON data")?;
+    let data: AppData = serde_json::from_str(&contents).context("Failed to parse JSON data")?;
 
     Ok(data)
 }
@@ -26,11 +25,9 @@ pub fn save_data(path: &str, data: &AppData) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    let json = serde_json::to_string_pretty(data)
-        .context("Failed to serialize data to JSON")?;
+    let json = serde_json::to_string_pretty(data).context("Failed to serialize data to JSON")?;
 
-    fs::write(path, json)
-        .context(format!("Failed to write data file: {}", path))?;
+    fs::write(path, json).context(format!("Failed to write data file: {}", path))?;
 
     Ok(())
 }

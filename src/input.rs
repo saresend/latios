@@ -1,6 +1,6 @@
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use crate::app::App;
-use crate::models::{AppView, FocusPane, InputMode, DetailEditField};
+use crate::models::{AppView, DetailEditField, FocusPane, InputMode};
+use crossterm::event::{self, Event, KeyCode, KeyEvent};
 
 pub fn handle_input(app: &mut App) -> anyhow::Result<()> {
     if event::poll(std::time::Duration::from_millis(100))? {
@@ -18,9 +18,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     match app.view_state.current_view {
         AppView::TaskList => handle_task_list_normal(app, key),
         AppView::TaskDetail => handle_task_detail_normal(app, key),
-        AppView::ProjectDetail => handle_project_detail_normal(app, key),
+        AppView::WorkstreamDetail => handle_workstream_detail_normal(app, key),
+        AppView::PresetPicker => handle_preset_picker_normal(app, key),
         AppView::Help => handle_help_view(app, key),
-        _ => {}
     }
 }
 
@@ -45,7 +45,7 @@ fn handle_task_list_normal(app: &mut App, key: KeyEvent) {
 
     match app.view_state.focused_pane {
         FocusPane::Tasks => handle_tasks_pane_normal(app, key),
-        FocusPane::Projects => handle_projects_pane_normal(app, key),
+        FocusPane::Workstreams => handle_workstreams_pane_normal(app, key),
     }
 }
 
@@ -63,14 +63,14 @@ fn handle_tasks_pane_normal(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_projects_pane_normal(app: &mut App, key: KeyEvent) {
+fn handle_workstreams_pane_normal(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => app.next_project(),
-        KeyCode::Char('k') | KeyCode::Up => app.previous_project(),
-        KeyCode::Char('a') => app.start_add_project(),
-        KeyCode::Enter | KeyCode::Char('f') => app.select_project_as_filter(),
-        KeyCode::Char('e') => app.start_edit_project(),
-        KeyCode::Char('d') => app.delete_selected_project(),
+        KeyCode::Char('j') | KeyCode::Down => app.next_workstream(),
+        KeyCode::Char('k') | KeyCode::Up => app.previous_workstream(),
+        KeyCode::Char('a') => app.start_add_workstream(),
+        KeyCode::Enter => app.launch_selected_workstream(),
+        KeyCode::Char('e') => app.start_edit_workstream(),
+        KeyCode::Char('d') => app.delete_selected_workstream(),
         _ => {}
     }
 }
@@ -80,63 +80,67 @@ fn handle_task_detail_normal(app: &mut App, key: KeyEvent) {
         KeyCode::Esc | KeyCode::Char('q') => app.exit_detail_view(),
         KeyCode::Char('j') | KeyCode::Down => {
             // Navigate between fields, or within lists
-            if app.detail_field_selection == 2 {
-                app.next_tag();
-            } else if app.detail_field_selection == 3 {
-                app.next_file_ref();
-            } else {
-                app.next_detail_field();
+            match app.detail_field_selection {
+                2 => app.next_tag(),
+                3 => app.next_file_ref(),
+                4 => app.next_metadata(),
+                5 => app.next_workstream_link(),
+                _ => app.next_detail_field(),
             }
         }
-        KeyCode::Char('k') | KeyCode::Up => {
-            // Navigate between fields, or within lists
-            if app.detail_field_selection == 2 {
-                app.previous_tag();
-            } else if app.detail_field_selection == 3 {
-                app.previous_file_ref();
-            } else {
-                app.previous_detail_field();
-            }
-        }
+        KeyCode::Char('k') | KeyCode::Up => match app.detail_field_selection {
+            2 => app.previous_tag(),
+            3 => app.previous_file_ref(),
+            4 => app.previous_metadata(),
+            5 => app.previous_workstream_link(),
+            _ => app.previous_detail_field(),
+        },
         KeyCode::Tab => app.next_detail_field(),
         KeyCode::Char('i') | KeyCode::Enter => start_editing_current_field(app),
         KeyCode::Char('a') => add_to_current_list(app),
         KeyCode::Char('d') => delete_from_current_list(app),
-        KeyCode::Char('h') | KeyCode::Left => {
-            // Navigate within lists
-            if app.detail_field_selection == 2 {
-                app.previous_tag();
-            } else if app.detail_field_selection == 3 {
-                app.previous_file_ref();
-            }
-        }
-        KeyCode::Char('l') | KeyCode::Right => {
-            // Navigate within lists
-            if app.detail_field_selection == 2 {
-                app.next_tag();
-            } else if app.detail_field_selection == 3 {
-                app.next_file_ref();
-            }
-        }
+        KeyCode::Char('h') | KeyCode::Left => match app.detail_field_selection {
+            2 => app.previous_tag(),
+            3 => app.previous_file_ref(),
+            4 => app.previous_metadata(),
+            5 => app.previous_workstream_link(),
+            _ => {}
+        },
+        KeyCode::Char('l') | KeyCode::Right => match app.detail_field_selection {
+            2 => app.next_tag(),
+            3 => app.next_file_ref(),
+            4 => app.next_metadata(),
+            5 => app.next_workstream_link(),
+            _ => {}
+        },
         _ => {}
     }
 }
 
-fn handle_project_detail_normal(app: &mut App, key: KeyEvent) {
+fn handle_workstream_detail_normal(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => app.exit_project_detail_view(),
+        KeyCode::Esc | KeyCode::Char('q') => app.exit_workstream_detail_view(),
         KeyCode::Char('j') | KeyCode::Down => app.next_detail_field(),
         KeyCode::Char('k') | KeyCode::Up => app.previous_detail_field(),
         KeyCode::Tab => app.next_detail_field(),
-        KeyCode::Char('i') | KeyCode::Enter => start_editing_current_project_field(app),
+        KeyCode::Char('i') | KeyCode::Enter => {
+            if app.detail_field_selection == 0 {
+                app.start_edit_workstream_name();
+            } else {
+                // Launch workstream on Enter if not on name field
+                app.launch_selected_workstream();
+            }
+        }
         _ => {}
     }
 }
 
-fn start_editing_current_project_field(app: &mut App) {
-    match app.detail_field_selection {
-        0 => app.start_edit_project_name(),
-        1 => app.start_edit_project_description(),
+fn handle_preset_picker_normal(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => app.cancel_preset_picker(),
+        KeyCode::Char('j') | KeyCode::Down => app.next_preset(),
+        KeyCode::Char('k') | KeyCode::Up => app.previous_preset(),
+        KeyCode::Enter => app.confirm_add_workstream(),
         _ => {}
     }
 }
@@ -153,6 +157,7 @@ fn add_to_current_list(app: &mut App) {
     match app.detail_field_selection {
         2 => app.start_add_tag(),
         3 => app.start_add_file_ref(),
+        4 => app.start_add_metadata(),
         _ => {}
     }
 }
@@ -161,6 +166,8 @@ fn delete_from_current_list(app: &mut App) {
     match app.detail_field_selection {
         2 => app.delete_selected_tag(),
         3 => app.delete_selected_file_ref(),
+        4 => app.delete_selected_metadata(),
+        5 => app.unlink_selected_workstream(),
         _ => {}
     }
 }
@@ -188,7 +195,9 @@ fn handle_insert_mode(app: &mut App, key: KeyEvent) {
             if let Some(edit_state) = &mut app.view_state.description_edit_state {
                 edit_state.insert_char(c);
             } else {
-                app.view_state.input_buffer.insert(app.view_state.cursor_position, c);
+                app.view_state
+                    .input_buffer
+                    .insert(app.view_state.cursor_position, c);
                 app.view_state.cursor_position += 1;
             }
         }
@@ -196,7 +205,9 @@ fn handle_insert_mode(app: &mut App, key: KeyEvent) {
             if let Some(edit_state) = &mut app.view_state.description_edit_state {
                 edit_state.backspace();
             } else if app.view_state.cursor_position > 0 {
-                app.view_state.input_buffer.remove(app.view_state.cursor_position - 1);
+                app.view_state
+                    .input_buffer
+                    .remove(app.view_state.cursor_position - 1);
                 app.view_state.cursor_position -= 1;
             }
         }
@@ -223,18 +234,19 @@ fn handle_enter_in_edit_mode(app: &mut App) {
         Some(DetailEditField::Title) => app.save_title_edit(),
         Some(DetailEditField::AddingTag) => app.save_new_tag(),
         Some(DetailEditField::AddingFileRef) => app.advance_file_ref_step(),
-        Some(DetailEditField::Description) | Some(DetailEditField::ProjectDescription) => {
+        Some(DetailEditField::AddingMetadata) => app.advance_metadata_step(),
+        Some(DetailEditField::Description) => {
             // Insert newline in the description editor
             if let Some(edit_state) = &mut app.view_state.description_edit_state {
                 edit_state.insert_newline();
             }
         }
-        Some(DetailEditField::ProjectName) => app.save_project_name_edit(),
+        Some(DetailEditField::WorkstreamName) => app.save_workstream_name_edit(),
         None => {
             // Route based on focused pane
             match app.view_state.focused_pane {
                 FocusPane::Tasks => app.confirm_add_task(),
-                FocusPane::Projects => app.confirm_add_project(),
+                FocusPane::Workstreams => app.confirm_add_workstream(),
             }
         }
     }
@@ -244,8 +256,6 @@ fn cancel_current_edit(app: &mut App) {
     // For description editing, ESC saves the changes
     if app.view_state.detail_editing_field == Some(DetailEditField::Description) {
         app.save_description_edit();
-    } else if app.view_state.detail_editing_field == Some(DetailEditField::ProjectDescription) {
-        app.save_project_description_edit();
     } else if app.view_state.detail_editing_field.is_some() {
         // For other edit fields, ESC cancels
         app.view_state.detail_editing_field = None;
@@ -262,7 +272,7 @@ fn export_tasks(app: &mut App) {
     let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
     let filename = format!("latios-export-{}.md", timestamp);
 
-    match export_to_markdown(&app.data, &filename, app.current_project_id.as_deref()) {
+    match export_to_markdown(&app.data, &filename) {
         Ok(_) => {
             app.set_status(format!("Exported to {}", filename));
         }
@@ -294,18 +304,39 @@ fn format_task_for_clipboard(task: &crate::models::Task, data: &crate::models::A
     output.push_str(&format!("# Task: {}\n\n", task.title));
 
     // Metadata
-    output.push_str(&format!("**Status:** {}\n",
-        if task.completed { "Completed" } else { "Pending" }));
+    output.push_str(&format!(
+        "**Status:** {}\n",
+        if task.completed {
+            "Completed"
+        } else {
+            "Pending"
+        }
+    ));
     output.push_str(&format!("**Created:** {}\n", task.created_at));
 
-    // Project
-    if let Some(project) = data.get_project(&task.project_id) {
-        output.push_str(&format!("**Project:** {}\n", project.name));
+    // Workstreams
+    if !task.workstream_ids.is_empty() {
+        let ws_names: Vec<&str> = task
+            .workstream_ids
+            .iter()
+            .filter_map(|id| data.get_workstream(id).map(|w| w.name.as_str()))
+            .collect();
+        if !ws_names.is_empty() {
+            output.push_str(&format!("**Workstreams:** {}\n", ws_names.join(", ")));
+        }
     }
 
     // Tags
     if !task.tags.is_empty() {
         output.push_str(&format!("**Tags:** {}\n", task.tags.join(", ")));
+    }
+
+    // Task metadata
+    if !task.metadata.is_empty() {
+        output.push_str("\n## Metadata\n\n");
+        for (k, v) in &task.metadata {
+            output.push_str(&format!("- **{}:** {}\n", k, v));
+        }
     }
 
     output.push_str("\n");

@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DescriptionEditState {
-    text_buffer: String,            // Single buffer with '\n' chars
-    cursor_byte_offset: usize,      // Cursor position in bytes
+    text_buffer: String,             // Single buffer with '\n' chars
+    cursor_byte_offset: usize,       // Cursor position in bytes
     preferred_column: Option<usize>, // Remembers column for up/down nav
 }
 
@@ -26,7 +26,12 @@ impl DescriptionEditState {
     fn offset_to_line_col(&self, offset: usize) -> (usize, usize) {
         let text_before = &self.text_buffer[..offset.min(self.text_buffer.len())];
         let line = text_before.chars().filter(|&c| c == '\n').count();
-        let col = text_before.rsplit('\n').next().unwrap_or("").chars().count();
+        let col = text_before
+            .rsplit('\n')
+            .next()
+            .unwrap_or("")
+            .chars()
+            .count();
         (line, col)
     }
 
@@ -101,7 +106,8 @@ impl DescriptionEditState {
             let text = &self.text_buffer[..self.cursor_byte_offset];
             if let Some(ch) = text.chars().last() {
                 let char_len = ch.len_utf8();
-                self.text_buffer.drain(self.cursor_byte_offset - char_len..self.cursor_byte_offset);
+                self.text_buffer
+                    .drain(self.cursor_byte_offset - char_len..self.cursor_byte_offset);
                 self.cursor_byte_offset -= char_len;
                 self.preferred_column = None;
             }

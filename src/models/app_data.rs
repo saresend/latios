@@ -1,11 +1,11 @@
+use super::{Task, Workstream};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::{Task, Project};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppData {
     pub tasks: HashMap<String, Task>,
-    pub projects: HashMap<String, Project>,
+    pub workstreams: HashMap<String, Workstream>,
     pub version: String,
 }
 
@@ -13,54 +13,38 @@ impl Default for AppData {
     fn default() -> Self {
         Self {
             tasks: HashMap::new(),
-            projects: HashMap::new(),
-            version: "1.0.0".to_string(),
+            workstreams: HashMap::new(),
+            version: "2.0.0".to_string(),
         }
     }
 }
 
 impl AppData {
-    /// Get tasks filtered by project.
-    /// If project_id is None, returns all tasks.
-    /// If project_id is Some(pid), returns only tasks for that project.
-    pub fn get_tasks_by_project(&self, project_id: Option<&str>) -> Vec<&Task> {
-        self.tasks
-            .values()
-            .filter(|t| {
-                match project_id {
-                    None => true, // Show all tasks
-                    Some(pid) => t.project_id == pid,
-                }
-            })
-            .collect()
+    /// Get all tasks sorted by created_at
+    pub fn get_all_tasks(&self) -> Vec<&Task> {
+        let mut tasks: Vec<_> = self.tasks.values().collect();
+        tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        tasks
     }
 
-    pub fn get_tasks_by_project_mut(&mut self, project_id: Option<&str>) -> Vec<&mut Task> {
+    /// Get tasks linked to a specific workstream
+    pub fn get_tasks_by_workstream(&self, workstream_id: &str) -> Vec<&Task> {
         self.tasks
-            .values_mut()
-            .filter(|t| {
-                match project_id {
-                    None => true, // Show all tasks
-                    Some(pid) => t.project_id == pid,
-                }
-            })
+            .values()
+            .filter(|t| t.workstream_ids.contains(&workstream_id.to_string()))
             .collect()
     }
 
     pub fn find_task_by_remote_id(&self, remote_id: &str) -> Option<&Task> {
-        self.tasks.values().find(|t| t.remote_id.as_deref() == Some(remote_id))
+        self.tasks
+            .values()
+            .find(|t| t.remote_id.as_deref() == Some(remote_id))
     }
 
     pub fn find_task_by_remote_id_mut(&mut self, remote_id: &str) -> Option<&mut Task> {
-        self.tasks.values_mut().find(|t| t.remote_id.as_deref() == Some(remote_id))
-    }
-
-    pub fn find_project_by_remote_id(&self, remote_id: &str) -> Option<&Project> {
-        self.projects.values().find(|p| p.remote_id.as_deref() == Some(remote_id))
-    }
-
-    pub fn find_project_by_remote_id_mut(&mut self, remote_id: &str) -> Option<&mut Project> {
-        self.projects.values_mut().find(|p| p.remote_id.as_deref() == Some(remote_id))
+        self.tasks
+            .values_mut()
+            .find(|t| t.remote_id.as_deref() == Some(remote_id))
     }
 
     pub fn add_task(&mut self, task: Task) {
@@ -79,25 +63,44 @@ impl AppData {
         self.tasks.get_mut(task_id)
     }
 
-    pub fn add_project(&mut self, project: Project) {
-        self.projects.insert(project.id.clone(), project);
+    // Workstream methods
+    pub fn add_workstream(&mut self, workstream: Workstream) {
+        self.workstreams.insert(workstream.id.clone(), workstream);
     }
 
-    pub fn remove_project(&mut self, project_id: &str) -> Option<Project> {
-        self.projects.remove(project_id)
+    pub fn remove_workstream(&mut self, workstream_id: &str) -> Option<Workstream> {
+        // Also remove this workstream from any tasks that reference it
+        for task in self.tasks.values_mut() {
+            task.workstream_ids.retain(|id| id != workstream_id);
+        }
+        self.workstreams.remove(workstream_id)
     }
 
-    pub fn get_project(&self, project_id: &str) -> Option<&Project> {
-        self.projects.get(project_id)
+    pub fn get_workstream(&self, workstream_id: &str) -> Option<&Workstream> {
+        self.workstreams.get(workstream_id)
     }
 
-    pub fn get_project_mut(&mut self, project_id: &str) -> Option<&mut Project> {
-        self.projects.get_mut(project_id)
+    pub fn get_workstream_mut(&mut self, workstream_id: &str) -> Option<&mut Workstream> {
+        self.workstreams.get_mut(workstream_id)
     }
 
-    pub fn get_projects_sorted(&self) -> Vec<&Project> {
-        let mut projects: Vec<_> = self.projects.values().collect();
-        projects.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-        projects
+    pub fn get_workstreams_sorted(&self) -> Vec<&Workstream> {
+        let mut workstreams: Vec<_> = self.workstreams.values().collect();
+        workstreams.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        workstreams
+    }
+
+    /// Link a task to a workstream
+    pub fn link_task_to_workstream(&mut self, task_id: &str, workstream_id: &str) {
+        if let Some(task) = self.tasks.get_mut(task_id) {
+            task.add_workstream(workstream_id.to_string());
+        }
+    }
+
+    /// Unlink a task from a workstream
+    pub fn unlink_task_from_workstream(&mut self, task_id: &str, workstream_id: &str) {
+        if let Some(task) = self.tasks.get_mut(task_id) {
+            task.remove_workstream(workstream_id);
+        }
     }
 }

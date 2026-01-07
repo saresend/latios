@@ -2,15 +2,15 @@
 pub enum AppView {
     TaskList,
     TaskDetail,
-    ProjectDetail,
-    ProjectList,
+    WorkstreamDetail,
+    PresetPicker,
     Help,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusPane {
     Tasks,
-    Projects,
+    Workstreams,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,8 +25,8 @@ pub enum DetailEditField {
     Description,
     AddingTag,
     AddingFileRef,
-    ProjectName,
-    ProjectDescription,
+    AddingMetadata,
+    WorkstreamName,
 }
 
 use crate::models::DescriptionEditState;
@@ -37,7 +37,7 @@ pub struct ViewState {
     pub focused_pane: FocusPane,
 
     pub editing_task_id: Option<String>,
-    pub editing_project_id: Option<String>,
+    pub editing_workstream_id: Option<String>,
     pub detail_editing_field: Option<DetailEditField>,
 
     pub input_mode: InputMode,
@@ -45,6 +45,9 @@ pub struct ViewState {
     pub cursor_position: usize,
 
     pub description_edit_state: Option<DescriptionEditState>,
+
+    // Preset picker state
+    pub selected_preset_index: usize,
 }
 
 impl Default for ViewState {
@@ -53,12 +56,13 @@ impl Default for ViewState {
             current_view: AppView::TaskList,
             focused_pane: FocusPane::Tasks,
             editing_task_id: None,
-            editing_project_id: None,
+            editing_workstream_id: None,
             detail_editing_field: None,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             cursor_position: 0,
             description_edit_state: None,
+            selected_preset_index: 0,
         }
     }
 }

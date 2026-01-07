@@ -1,6 +1,6 @@
-use reqwest::blocking::Client;
 use super::config::PocketBaseConfig;
-use super::models::{PBTask, PBProject, ListResponse};
+use super::models::{ListResponse, PBTask};
+use reqwest::blocking::Client;
 
 pub struct PocketBaseClient {
     client: Client,
@@ -28,18 +28,19 @@ impl PocketBaseClient {
 
     // Tasks API
     pub fn list_tasks(&self) -> anyhow::Result<Vec<PBTask>> {
-        let url = format!("{}/api/collections/tasks/records?perPage=500", self.base_url);
-        let response: ListResponse<PBTask> = self.client
-            .get(&url)
-            .send()?
-            .error_for_status()?
-            .json()?;
+        let url = format!(
+            "{}/api/collections/tasks/records?perPage=500",
+            self.base_url
+        );
+        let response: ListResponse<PBTask> =
+            self.client.get(&url).send()?.error_for_status()?.json()?;
         Ok(response.items)
     }
 
     pub fn create_task(&self, task: &PBTask) -> anyhow::Result<PBTask> {
         let url = format!("{}/api/collections/tasks/records", self.base_url);
-        let response: PBTask = self.client
+        let response: PBTask = self
+            .client
             .post(&url)
             .json(task)
             .send()?
@@ -49,8 +50,12 @@ impl PocketBaseClient {
     }
 
     pub fn update_task(&self, remote_id: &str, task: &PBTask) -> anyhow::Result<PBTask> {
-        let url = format!("{}/api/collections/tasks/records/{}", self.base_url, remote_id);
-        let response: PBTask = self.client
+        let url = format!(
+            "{}/api/collections/tasks/records/{}",
+            self.base_url, remote_id
+        );
+        let response: PBTask = self
+            .client
             .patch(&url)
             .json(task)
             .send()?
@@ -60,53 +65,11 @@ impl PocketBaseClient {
     }
 
     pub fn delete_task(&self, remote_id: &str) -> anyhow::Result<()> {
-        let url = format!("{}/api/collections/tasks/records/{}", self.base_url, remote_id);
-        self.client
-            .delete(&url)
-            .send()?
-            .error_for_status()?;
-        Ok(())
-    }
-
-    // Projects API
-    pub fn list_projects(&self) -> anyhow::Result<Vec<PBProject>> {
-        let url = format!("{}/api/collections/projects/records?perPage=500", self.base_url);
-        let response: ListResponse<PBProject> = self.client
-            .get(&url)
-            .send()?
-            .error_for_status()?
-            .json()?;
-        Ok(response.items)
-    }
-
-    pub fn create_project(&self, project: &PBProject) -> anyhow::Result<PBProject> {
-        let url = format!("{}/api/collections/projects/records", self.base_url);
-        let response: PBProject = self.client
-            .post(&url)
-            .json(project)
-            .send()?
-            .error_for_status()?
-            .json()?;
-        Ok(response)
-    }
-
-    pub fn update_project(&self, remote_id: &str, project: &PBProject) -> anyhow::Result<PBProject> {
-        let url = format!("{}/api/collections/projects/records/{}", self.base_url, remote_id);
-        let response: PBProject = self.client
-            .patch(&url)
-            .json(project)
-            .send()?
-            .error_for_status()?
-            .json()?;
-        Ok(response)
-    }
-
-    pub fn delete_project(&self, remote_id: &str) -> anyhow::Result<()> {
-        let url = format!("{}/api/collections/projects/records/{}", self.base_url, remote_id);
-        self.client
-            .delete(&url)
-            .send()?
-            .error_for_status()?;
+        let url = format!(
+            "{}/api/collections/tasks/records/{}",
+            self.base_url, remote_id
+        );
+        self.client.delete(&url).send()?.error_for_status()?;
         Ok(())
     }
 }

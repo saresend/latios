@@ -2,31 +2,20 @@ use crate::models::{AppData, Task};
 use anyhow::{Context, Result};
 use std::fs;
 
-pub fn export_to_markdown(
-    data: &AppData,
-    output_path: &str,
-    project_id: Option<&str>,
-) -> Result<()> {
+pub fn export_to_markdown(data: &AppData, output_path: &str) -> Result<()> {
     let mut markdown = String::new();
 
     // Header
     markdown.push_str("# Task Context Export\n\n");
-    markdown.push_str(&format!("Generated: {}\n\n", chrono::Utc::now().to_rfc3339()));
+    markdown.push_str(&format!(
+        "Generated: {}\n\n",
+        chrono::Utc::now().to_rfc3339()
+    ));
 
-    // Project information
-    if let Some(pid) = project_id {
-        if let Some(project) = data.projects.get(pid) {
-            markdown.push_str(&format!("## Project: {}\n\n", project.name));
-            if !project.description.is_empty() {
-                markdown.push_str(&format!("{}\n\n", project.description));
-            }
-        }
-    } else {
-        markdown.push_str("## All Tasks\n\n");
-    }
+    markdown.push_str("## All Tasks\n\n");
 
-    // Get tasks (filtered by project if specified)
-    let mut tasks: Vec<&Task> = data.get_tasks_by_project(project_id);
+    // Get all tasks sorted by update time
+    let mut tasks: Vec<&Task> = data.get_all_tasks();
     tasks.sort_by(|a, b| b.updated_at.cmp(&a.updated_at)); // Most recent first
 
     // Export each task
@@ -42,12 +31,19 @@ pub fn export_to_markdown(
 
 fn export_task_to_markdown(markdown: &mut String, task: &Task, data: &AppData) {
     // Task header
-    let status = if task.completed { "✓" } else { " " };
+    let status = if task.completed { "x" } else { " " };
     markdown.push_str(&format!("## [{}] {}\n\n", status, task.title));
 
     // Metadata
     markdown.push_str(&format!("**ID:** `{}`\n", task.id));
-    markdown.push_str(&format!("**Status:** {}\n", if task.completed { "Completed" } else { "Pending" }));
+    markdown.push_str(&format!(
+        "**Status:** {}\n",
+        if task.completed {
+            "Completed"
+        } else {
+            "Pending"
+        }
+    ));
     markdown.push_str(&format!("**Created:** {}\n", task.created_at));
     markdown.push_str(&format!("**Updated:** {}\n", task.updated_at));
 
@@ -55,14 +51,29 @@ fn export_task_to_markdown(markdown: &mut String, task: &Task, data: &AppData) {
         markdown.push_str(&format!("**Completed:** {}\n", completed));
     }
 
-    // Project
-    if let Some(project) = data.projects.get(&task.project_id) {
-        markdown.push_str(&format!("**Project:** {}\n", project.name));
+    // Workstreams
+    if !task.workstream_ids.is_empty() {
+        let ws_names: Vec<&str> = task
+            .workstream_ids
+            .iter()
+            .filter_map(|id| data.get_workstream(id).map(|w| w.name.as_str()))
+            .collect();
+        if !ws_names.is_empty() {
+            markdown.push_str(&format!("**Workstreams:** {}\n", ws_names.join(", ")));
+        }
     }
 
     // Tags
     if !task.tags.is_empty() {
         markdown.push_str(&format!("**Tags:** {}\n", task.tags.join(", ")));
+    }
+
+    // Task metadata
+    if !task.metadata.is_empty() {
+        markdown.push_str("\n### Metadata\n\n");
+        for (k, v) in &task.metadata {
+            markdown.push_str(&format!("- **{}:** {}\n", k, v));
+        }
     }
 
     markdown.push_str("\n");

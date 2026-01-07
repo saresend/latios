@@ -1,19 +1,16 @@
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 
 mod app;
+mod input;
+mod markdown;
 mod models;
 mod storage;
 mod ui;
-mod input;
-mod markdown;
 
 use app::App;
 
@@ -62,10 +59,7 @@ fn main() -> anyhow::Result<()> {
     result
 }
 
-fn run_app<B>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-) -> anyhow::Result<()>
+fn run_app<B>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Result<()>
 where
     B: ratatui::backend::Backend,
     <B as ratatui::backend::Backend>::Error: Send + Sync + 'static,
@@ -90,13 +84,11 @@ where
 
 fn get_data_file_path() -> anyhow::Result<String> {
     // Get home directory using dirs crate
-    let home_dir = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+    let home_dir =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
 
     // Construct path: ~/.latios/tasks.json
-    let data_path = home_dir
-        .join(".latios")
-        .join("tasks.json");
+    let data_path = home_dir.join(".latios").join("tasks.json");
 
     Ok(data_path.to_string_lossy().to_string())
 }

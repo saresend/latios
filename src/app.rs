@@ -1,5 +1,7 @@
-use crate::models::{AppData, AppView, FocusPane, InputMode, DetailEditField, ViewState, DescriptionEditState};
-
+use crate::models::{
+    AppData, AppView, DescriptionEditState, DetailEditField, FocusPane, InputMode, ViewState,
+    Workstream, get_all_presets, get_preset_by_id,
+};
 
 pub struct App {
     pub data: AppData,
@@ -9,22 +11,25 @@ pub struct App {
     pub selected_task_index: usize,
     pub task_list_scroll: usize,
 
-    pub current_project_id: Option<String>,
-    pub selected_project_index: usize,
-
-    // Index 0 = "All Projects", 1+ = actual projects
-    pub selected_project_index_in_pane: usize,
-    pub project_list_scroll: usize,
+    pub selected_workstream_index: usize,
+    pub workstream_list_scroll: usize,
 
     pub detail_field_selection: usize,
     pub detail_scroll: usize,
     pub selected_tag_index: usize,
     pub selected_file_ref_index: usize,
+    pub selected_metadata_index: usize,
+    pub selected_workstream_link_index: usize,
 
     pub file_ref_path_buffer: String,
     pub file_ref_line_buffer: String,
     pub file_ref_desc_buffer: String,
     pub file_ref_input_step: usize,
+
+    // Metadata input buffers
+    pub metadata_key_buffer: String,
+    pub metadata_value_buffer: String,
+    pub metadata_input_step: usize,
 
     pub data_file_path: String,
 
@@ -45,18 +50,21 @@ impl App {
             should_quit: false,
             selected_task_index: 0,
             task_list_scroll: 0,
-            current_project_id: None,
-            selected_project_index: 0,
-            selected_project_index_in_pane: 0,
-            project_list_scroll: 0,
+            selected_workstream_index: 0,
+            workstream_list_scroll: 0,
             detail_field_selection: 0,
             detail_scroll: 0,
             selected_tag_index: 0,
             selected_file_ref_index: 0,
+            selected_metadata_index: 0,
+            selected_workstream_link_index: 0,
             file_ref_path_buffer: String::new(),
             file_ref_line_buffer: String::new(),
             file_ref_desc_buffer: String::new(),
             file_ref_input_step: 0,
+            metadata_key_buffer: String::new(),
+            metadata_value_buffer: String::new(),
+            metadata_input_step: 0,
             data_file_path,
             status_message: None,
             status_timestamp: None,
@@ -79,13 +87,9 @@ impl App {
         }
     }
 
-    // Get tasks visible in current view
+    // Get all tasks (no filtering)
     fn get_visible_tasks(&self) -> Vec<&crate::models::Task> {
-        let mut tasks = self.data.get_tasks_by_project(
-            self.current_project_id.as_deref()
-        );
-        tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-        tasks
+        self.data.get_all_tasks()
     }
 
     // Get the ID of the currently selected task
@@ -122,23 +126,10 @@ impl App {
 
     pub fn confirm_add_task(&mut self) {
         if !self.view_state.input_buffer.is_empty() {
-            // Get the project ID from the currently selected project in the pane
-            let project_id = self.get_selected_project_id();
-
-            if let Some(pid) = project_id {
-                let task = crate::models::Task::new(
-                    self.view_state.input_buffer.clone(),
-                    pid,
-                );
-                self.data.add_task(task);
-                self.view_state.input_buffer.clear();
-                self.view_state.input_mode = InputMode::Normal;
-            } else {
-                // No project selected - show error
-                self.set_status("Select a project first".to_string());
-                self.view_state.input_buffer.clear();
-                self.view_state.input_mode = InputMode::Normal;
-            }
+            let task = crate::models::Task::new(self.view_state.input_buffer.clone());
+            self.data.add_task(task);
+            self.view_state.input_buffer.clear();
+            self.view_state.input_mode = InputMode::Normal;
         }
     }
 
@@ -185,8 +176,8 @@ impl App {
     }
 
     pub fn next_detail_field(&mut self) {
-        // Max 3 sections: title, description, tags, file_refs
-        self.detail_field_selection = (self.detail_field_selection + 1).min(3);
+        // Max 5 sections: title, description, tags, file_refs, metadata, workstreams
+        self.detail_field_selection = (self.detail_field_selection + 1).min(5);
     }
 
     pub fn previous_detail_field(&mut self) {
@@ -196,13 +187,15 @@ impl App {
     }
 
     pub fn get_editing_task(&self) -> Option<&crate::models::Task> {
-        self.view_state.editing_task_id
+        self.view_state
+            .editing_task_id
             .as_ref()
             .and_then(|id| self.data.get_task(id))
     }
 
     pub fn get_editing_task_mut(&mut self) -> Option<&mut crate::models::Task> {
-        self.view_state.editing_task_id
+        self.view_state
+            .editing_task_id
             .as_ref()
             .and_then(|id| self.data.get_task_mut(id))
     }
@@ -230,9 +223,8 @@ impl App {
 
     pub fn start_edit_description(&mut self) {
         if let Some(task) = self.get_editing_task() {
-            self.view_state.description_edit_state = Some(
-                DescriptionEditState::new(task.description.clone())
-            );
+            self.view_state.description_edit_state =
+                Some(DescriptionEditState::new(task.description.clone()));
             self.view_state.detail_editing_field = Some(DetailEditField::Description);
             self.view_state.input_mode = InputMode::Insert;
         }
@@ -362,7 +354,8 @@ impl App {
     pub fn next_file_ref(&mut self) {
         if let Some(task) = self.get_editing_task() {
             if !task.file_references.is_empty() {
-                self.selected_file_ref_index = (self.selected_file_ref_index + 1).min(task.file_references.len() - 1);
+                self.selected_file_ref_index =
+                    (self.selected_file_ref_index + 1).min(task.file_references.len() - 1);
             }
         }
     }
@@ -383,7 +376,9 @@ impl App {
         }
         // Adjust selection after mutable borrow ends
         if let Some(task) = self.get_editing_task() {
-            if self.selected_file_ref_index >= task.file_references.len() && !task.file_references.is_empty() {
+            if self.selected_file_ref_index >= task.file_references.len()
+                && !task.file_references.is_empty()
+            {
                 self.selected_file_ref_index = task.file_references.len() - 1;
             } else if task.file_references.is_empty() {
                 self.selected_file_ref_index = 0;
@@ -391,149 +386,277 @@ impl App {
         }
     }
 
-    // Pane switching
-    pub fn switch_pane(&mut self) {
-        self.view_state.focused_pane = match self.view_state.focused_pane {
-            FocusPane::Tasks => FocusPane::Projects,
-            FocusPane::Projects => FocusPane::Tasks,
-        };
+    // Metadata methods
+    pub fn start_add_metadata(&mut self) {
+        self.metadata_key_buffer.clear();
+        self.metadata_value_buffer.clear();
+        self.metadata_input_step = 0;
+        self.view_state.input_buffer.clear();
+        self.view_state.cursor_position = 0;
+        self.view_state.detail_editing_field = Some(DetailEditField::AddingMetadata);
+        self.view_state.input_mode = InputMode::Insert;
     }
 
-    // Project navigation
-    // Index 0 = "All Projects", 1+ = actual projects
-    pub fn next_project(&mut self) {
-        let project_count = self.data.get_projects_sorted().len();
-        // Max index is project_count (because index 0 is "All Projects")
-        let max_index = project_count;
-        if self.selected_project_index_in_pane < max_index {
-            self.selected_project_index_in_pane += 1;
+    pub fn advance_metadata_step(&mut self) {
+        match self.metadata_input_step {
+            0 => self.metadata_key_buffer = self.view_state.input_buffer.clone(),
+            1 => self.metadata_value_buffer = self.view_state.input_buffer.clone(),
+            _ => {}
+        }
+
+        self.metadata_input_step += 1;
+        self.view_state.input_buffer.clear();
+        self.view_state.cursor_position = 0;
+
+        if self.metadata_input_step > 1 {
+            self.save_metadata();
         }
     }
 
-    pub fn previous_project(&mut self) {
-        if self.selected_project_index_in_pane > 0 {
-            self.selected_project_index_in_pane -= 1;
+    pub fn save_metadata(&mut self) {
+        if !self.metadata_key_buffer.is_empty() {
+            let key = self.metadata_key_buffer.clone();
+            let value = self.metadata_value_buffer.clone();
+
+            if let Some(task) = self.get_editing_task_mut() {
+                task.set_metadata(key, value);
+            }
         }
+
+        self.metadata_key_buffer.clear();
+        self.metadata_value_buffer.clear();
+        self.metadata_input_step = 0;
+        self.view_state.detail_editing_field = None;
+        self.view_state.input_mode = InputMode::Normal;
     }
 
-    /// Get the project ID of the currently selected project in the pane.
-    /// Returns None if "All Projects" (index 0) is selected.
-    pub fn get_selected_project_id(&self) -> Option<String> {
-        if self.selected_project_index_in_pane == 0 {
-            return None; // "All Projects" selected
-        }
-        let projects = self.data.get_projects_sorted();
-        // Subtract 1 to account for "All Projects" at index 0
-        projects.get(self.selected_project_index_in_pane - 1).map(|p| p.id.clone())
-    }
-
-    /// Select the currently highlighted project as the active filter.
-    /// Index 0 = All Projects (None), Index 1+ = specific project
-    pub fn select_project_as_filter(&mut self) {
-        self.current_project_id = self.get_selected_project_id();
-        // Reset task selection when changing filter
-        self.selected_task_index = 0;
-        self.task_list_scroll = 0;
-    }
-
-    // Project operations
-    pub fn delete_selected_project(&mut self) {
-        if let Some(project_id) = self.get_selected_project_id() {
-            self.data.remove_project(&project_id);
-            // Adjust selection if needed (account for "All Projects" at index 0)
-            let project_count = self.data.get_projects_sorted().len();
-            // Max valid index is project_count (since index 0 is "All Projects")
-            if self.selected_project_index_in_pane > project_count {
-                self.selected_project_index_in_pane = project_count;
+    pub fn next_metadata(&mut self) {
+        if let Some(task) = self.get_editing_task() {
+            if !task.metadata.is_empty() {
+                self.selected_metadata_index =
+                    (self.selected_metadata_index + 1).min(task.metadata.len() - 1);
             }
         }
     }
 
-    pub fn start_add_project(&mut self) {
-        self.view_state.input_mode = InputMode::Insert;
-        self.view_state.input_buffer.clear();
-        self.view_state.cursor_position = 0;
-    }
-
-    pub fn confirm_add_project(&mut self) {
-        if !self.view_state.input_buffer.is_empty() {
-            let project = crate::models::Project::new(self.view_state.input_buffer.clone());
-            self.data.add_project(project);
-            self.view_state.input_buffer.clear();
-            self.view_state.input_mode = InputMode::Normal;
+    pub fn previous_metadata(&mut self) {
+        if self.selected_metadata_index > 0 {
+            self.selected_metadata_index -= 1;
         }
     }
 
-    pub fn start_edit_project(&mut self) {
-        if let Some(project_id) = self.get_selected_project_id() {
-            self.view_state.editing_project_id = Some(project_id);
-            self.view_state.current_view = AppView::ProjectDetail;
+    pub fn delete_selected_metadata(&mut self) {
+        let index = self.selected_metadata_index;
+        if let Some(task) = self.get_editing_task_mut() {
+            let keys: Vec<String> = task.metadata.keys().cloned().collect();
+            if index < keys.len() {
+                task.remove_metadata(&keys[index]);
+            }
+        }
+        // Adjust selection after mutable borrow ends
+        if let Some(task) = self.get_editing_task() {
+            if self.selected_metadata_index >= task.metadata.len() && !task.metadata.is_empty() {
+                self.selected_metadata_index = task.metadata.len() - 1;
+            } else if task.metadata.is_empty() {
+                self.selected_metadata_index = 0;
+            }
+        }
+    }
+
+    // Workstream link navigation
+    pub fn next_workstream_link(&mut self) {
+        if let Some(task) = self.get_editing_task() {
+            if !task.workstream_ids.is_empty() {
+                self.selected_workstream_link_index =
+                    (self.selected_workstream_link_index + 1).min(task.workstream_ids.len() - 1);
+            }
+        }
+    }
+
+    pub fn previous_workstream_link(&mut self) {
+        if self.selected_workstream_link_index > 0 {
+            self.selected_workstream_link_index -= 1;
+        }
+    }
+
+    pub fn unlink_selected_workstream(&mut self) {
+        let index = self.selected_workstream_link_index;
+        if let Some(task) = self.get_editing_task_mut() {
+            if index < task.workstream_ids.len() {
+                task.workstream_ids.remove(index);
+                task.update_timestamp();
+            }
+        }
+        // Adjust selection
+        if let Some(task) = self.get_editing_task() {
+            if self.selected_workstream_link_index >= task.workstream_ids.len()
+                && !task.workstream_ids.is_empty()
+            {
+                self.selected_workstream_link_index = task.workstream_ids.len() - 1;
+            } else if task.workstream_ids.is_empty() {
+                self.selected_workstream_link_index = 0;
+            }
+        }
+    }
+
+    // Pane switching
+    pub fn switch_pane(&mut self) {
+        self.view_state.focused_pane = match self.view_state.focused_pane {
+            FocusPane::Tasks => FocusPane::Workstreams,
+            FocusPane::Workstreams => FocusPane::Tasks,
+        };
+    }
+
+    // Workstream navigation
+    pub fn next_workstream(&mut self) {
+        let workstream_count = self.data.get_workstreams_sorted().len();
+        if workstream_count > 0 {
+            self.selected_workstream_index =
+                (self.selected_workstream_index + 1).min(workstream_count - 1);
+        }
+    }
+
+    pub fn previous_workstream(&mut self) {
+        if self.selected_workstream_index > 0 {
+            self.selected_workstream_index -= 1;
+        }
+    }
+
+    /// Get the workstream ID of the currently selected workstream
+    pub fn get_selected_workstream_id(&self) -> Option<String> {
+        let workstreams = self.data.get_workstreams_sorted();
+        workstreams
+            .get(self.selected_workstream_index)
+            .map(|w| w.id.clone())
+    }
+
+    // Workstream operations
+    pub fn delete_selected_workstream(&mut self) {
+        if let Some(workstream_id) = self.get_selected_workstream_id() {
+            self.data.remove_workstream(&workstream_id);
+            // Adjust selection if needed
+            let workstream_count = self.data.get_workstreams_sorted().len();
+            if self.selected_workstream_index >= workstream_count && workstream_count > 0 {
+                self.selected_workstream_index = workstream_count - 1;
+            }
+        }
+    }
+
+    pub fn start_add_workstream(&mut self) {
+        // Open the preset picker
+        self.view_state.current_view = AppView::PresetPicker;
+        self.view_state.selected_preset_index = 0;
+    }
+
+    pub fn confirm_add_workstream(&mut self) {
+        // Create workstream with selected preset
+        let presets = get_all_presets();
+        if let Some(preset) = presets.get(self.view_state.selected_preset_index) {
+            // Generate a unique name
+            let workstream_count = self.data.workstreams.len();
+            let name = format!("{} #{}", preset.name, workstream_count + 1);
+
+            let workstream = Workstream::new(name, preset.id.to_string());
+            self.data.add_workstream(workstream);
+        }
+
+        self.view_state.current_view = AppView::TaskList;
+        self.view_state.input_mode = InputMode::Normal;
+    }
+
+    pub fn cancel_preset_picker(&mut self) {
+        self.view_state.current_view = AppView::TaskList;
+    }
+
+    pub fn next_preset(&mut self) {
+        let preset_count = get_all_presets().len();
+        if preset_count > 0 {
+            self.view_state.selected_preset_index =
+                (self.view_state.selected_preset_index + 1).min(preset_count - 1);
+        }
+    }
+
+    pub fn previous_preset(&mut self) {
+        if self.view_state.selected_preset_index > 0 {
+            self.view_state.selected_preset_index -= 1;
+        }
+    }
+
+    pub fn start_edit_workstream(&mut self) {
+        if let Some(workstream_id) = self.get_selected_workstream_id() {
+            self.view_state.editing_workstream_id = Some(workstream_id);
+            self.view_state.current_view = AppView::WorkstreamDetail;
             self.detail_field_selection = 0;
             self.view_state.input_mode = InputMode::Normal;
         }
     }
 
-    pub fn exit_project_detail_view(&mut self) {
-        self.view_state.editing_project_id = None;
+    pub fn exit_workstream_detail_view(&mut self) {
+        self.view_state.editing_workstream_id = None;
         self.view_state.current_view = AppView::TaskList;
         self.view_state.input_mode = InputMode::Normal;
         self.view_state.input_buffer.clear();
-        self.view_state.description_edit_state = None;
     }
 
-    pub fn get_editing_project(&self) -> Option<&crate::models::Project> {
-        self.view_state.editing_project_id
+    pub fn get_editing_workstream(&self) -> Option<&Workstream> {
+        self.view_state
+            .editing_workstream_id
             .as_ref()
-            .and_then(|id| self.data.get_project(id))
+            .and_then(|id| self.data.get_workstream(id))
     }
 
-    pub fn get_editing_project_mut(&mut self) -> Option<&mut crate::models::Project> {
-        self.view_state.editing_project_id
+    pub fn get_editing_workstream_mut(&mut self) -> Option<&mut Workstream> {
+        self.view_state
+            .editing_workstream_id
             .as_ref()
-            .and_then(|id| self.data.get_project_mut(id))
+            .and_then(|id| self.data.get_workstream_mut(id))
     }
 
-    // Project edit field methods
-    pub fn start_edit_project_name(&mut self) {
-        if let Some(project) = self.get_editing_project() {
-            self.view_state.input_buffer = project.name.clone();
+    // Workstream edit field methods
+    pub fn start_edit_workstream_name(&mut self) {
+        if let Some(workstream) = self.get_editing_workstream() {
+            self.view_state.input_buffer = workstream.name.clone();
             self.view_state.cursor_position = self.view_state.input_buffer.len();
-            self.view_state.detail_editing_field = Some(DetailEditField::ProjectName);
+            self.view_state.detail_editing_field = Some(DetailEditField::WorkstreamName);
             self.view_state.input_mode = InputMode::Insert;
         }
     }
 
-    pub fn save_project_name_edit(&mut self) {
+    pub fn save_workstream_name_edit(&mut self) {
         let new_name = self.view_state.input_buffer.clone();
-        if let Some(project) = self.get_editing_project_mut() {
-            project.name = new_name;
-            project.update_timestamp();
+        if let Some(workstream) = self.get_editing_workstream_mut() {
+            workstream.name = new_name;
+            workstream.update_timestamp();
         }
         self.view_state.input_buffer.clear();
         self.view_state.detail_editing_field = None;
         self.view_state.input_mode = InputMode::Normal;
     }
 
-    pub fn start_edit_project_description(&mut self) {
-        if let Some(project) = self.get_editing_project() {
-            self.view_state.description_edit_state = Some(
-                DescriptionEditState::new(project.description.clone())
-            );
-            self.view_state.detail_editing_field = Some(DetailEditField::ProjectDescription);
-            self.view_state.input_mode = InputMode::Insert;
-        }
-    }
+    /// Launch the selected workstream (execute its preset command)
+    pub fn launch_selected_workstream(&mut self) {
+        if let Some(workstream_id) = self.get_selected_workstream_id() {
+            if let Some(workstream) = self.data.get_workstream_mut(&workstream_id) {
+                // Get the preset
+                if let Some(preset) = get_preset_by_id(&workstream.preset_id) {
+                    // Mark as running
+                    workstream.set_state(crate::models::WorkstreamState::Running);
+                    workstream.mark_accessed();
 
-    pub fn save_project_description_edit(&mut self) {
-        if let Some(edit_state) = self.view_state.description_edit_state.take() {
-            let new_description = edit_state.into_string();
-            if let Some(project) = self.get_editing_project_mut() {
-                project.description = new_description;
-                project.update_timestamp();
+                    // Execute the command in background
+                    let command = preset.command.to_string();
+                    std::thread::spawn(move || {
+                        let _ = std::process::Command::new("bash")
+                            .arg("-c")
+                            .arg(&command)
+                            .spawn();
+                    });
+
+                    self.set_status(format!("Launched: {}", preset.name));
+                } else {
+                    self.set_status("Preset not found".to_string());
+                }
             }
         }
-        self.view_state.detail_editing_field = None;
-        self.view_state.input_mode = InputMode::Normal;
     }
-
 }

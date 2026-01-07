@@ -23,12 +23,12 @@ pub fn parse_markdown(text: &str) -> Vec<Line<'static>> {
                     Tag::Heading { level, .. } => {
                         heading_level = Some(level);
                         match level {
-                            HeadingLevel::H1 | HeadingLevel::H2 => {
-                                Style::default()
-                                    .add_modifier(Modifier::BOLD)
-                                    .fg(Color::Cyan)
-                            }
-                            _ => Style::default().add_modifier(Modifier::BOLD).fg(Color::Blue),
+                            HeadingLevel::H1 | HeadingLevel::H2 => Style::default()
+                                .add_modifier(Modifier::BOLD)
+                                .fg(Color::Cyan),
+                            _ => Style::default()
+                                .add_modifier(Modifier::BOLD)
+                                .fg(Color::Blue),
                         }
                     }
                     Tag::CodeBlock(_) => {
