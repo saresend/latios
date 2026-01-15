@@ -19,7 +19,8 @@ impl App {
         color_eyre::install().unwrap();
         while !self.is_terminal {
             terminal.draw(|frame| {
-                frame.render_widget_ref(&self, frame.area());
+                self.curr_app_state
+                    .render_ref(frame.area(), frame.buffer_mut())
             });
             let keypress = match crossterm::event::read()? {
                 Event::Key(key) => Some(key.code),
@@ -48,6 +49,7 @@ impl WidgetRef for App {
 
 struct Home {
     workstreams: Vec<Workstream>,
+    curr_workstream: usize,
 }
 
 impl WidgetRef for Home {
@@ -74,6 +76,7 @@ fn main() {
     let mut app = App {
         curr_app_state: Box::new(Home {
             workstreams: sample_workstreams,
+            curr_workstream: 0,
         }),
         is_terminal: false,
     };
