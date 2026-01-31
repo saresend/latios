@@ -44,7 +44,13 @@ impl Widget for &Workstream {
         Self: Sized,
     {
         let title = Line::from(self.title.clone());
-        let base_block = Block::bordered().title(title);
+        let subtitle = Line::from(self.spec_file.file_name().unwrap().to_str().unwrap());
+        let block_style = match self.highlight {
+            true => Style::default().fg(Color::LightBlue),
+            false => Style::default(),
+        };
+        let base_block = Block::bordered().title(title).style(block_style);
+        subtitle.render(base_block.inner(area), buf);
         base_block.render(area, buf);
     }
 }
@@ -53,6 +59,7 @@ impl Widget for &Workstream {
 pub struct LatiosApp {
     workstreams: Vec<Workstream>,
     exit: bool,
+    curr_selected: usize,
 }
 
 impl LatiosApp {
@@ -76,6 +83,18 @@ impl LatiosApp {
         Ok(())
     }
 
+    pub fn change_selected(&mut self, delta: isize) {
+        if self.workstreams.is_empty() {
+            // noop if empty workstreamset
+            return;
+        }
+        self.workstreams[self.curr_selected].highlight = false;
+        let amt = self.curr_selected as isize + delta;
+        self.curr_selected =
+            std::cmp::max(0, std::cmp::min((self.workstreams.len() - 1) as isize, amt)) as usize;
+        self.workstreams[self.curr_selected].highlight = true;
+    }
+
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
@@ -92,6 +111,8 @@ impl LatiosApp {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 match key_event.code {
                     KeyCode::Char('q') => self.exit = true,
+                    KeyCode::Char('j') => self.change_selected(1),
+                    KeyCode::Char('k') => self.change_selected(-1),
                     _ => {}
                 }
             }
@@ -123,7 +144,7 @@ impl Widget for &LatiosApp {
         let sections = layout.split(area);
         let workstream_layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(self.workstreams.iter().map(|x| Constraint::Max(5)));
+            .constraints(self.workstreams.iter().map(|x| Constraint::Max(3)));
         title.render(sections[0], buf);
         let stream_item = workstream_layout.split(sections[1]);
         let title = Line::from("Workstreams: ".bold());
