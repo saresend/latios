@@ -2,6 +2,7 @@ use ratatui::DefaultTerminal;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui::widgets::{List, WidgetRef};
+use reqwest::Client;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
@@ -31,7 +32,7 @@ async fn main() -> Result<()> {
     let server_handle = tokio::spawn(async move { run(ServerConfig::default()).await });
 
     let mut terminal = ratatui::init();
-    app.run(&mut terminal)?;
+    app.run(&mut terminal).await?;
     ratatui::restore();
     server_handle.abort();
     Ok(())
@@ -250,11 +251,28 @@ impl LatiosApp {
             new_workstream.handle_backspace();
         }
     }
-    pub fn handle_enter(&mut self) {
+    pub async fn handle_enter(&mut self) -> Result<()> {
         if let Some(new_workstream) = self.new_workstream.take() {
             let new_workstream = new_workstream.get_workstream();
+
+            let http_client = Client::new();
+            let session_input = server::SessionInput::new(
+                new_workstream.title.clone(),
+                new_workstream
+                    .spec_file
+                    .clone()
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+            );
+            let result = http_client
+                .post("http://localhost:8080/new")
+                .json(&session_input)
+                .send()
+                .await?;
             self.workstreams.push(new_workstream)
         }
+        Ok(())
     }
 
     pub fn handle_alphanum(&mut self, c: char) {
@@ -271,10 +289,10 @@ impl LatiosApp {
         }
     }
 
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+    pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events()?;
+            self.handle_events().await?;
         }
         Ok(())
     }
@@ -282,7 +300,7 @@ impl LatiosApp {
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
     }
-    fn handle_events(&mut self) -> Result<()> {
+    async fn handle_events(&mut self) -> Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 match key_event.code {
@@ -290,7 +308,9 @@ impl LatiosApp {
                     KeyCode::Esc => self.handle_escape(),
                     KeyCode::Tab => self.handle_tab(),
                     KeyCode::Backspace => self.handle_backspace(),
-                    KeyCode::Enter => self.handle_enter(),
+                    KeyCode::Enter => {
+                        let _ = self.handle_enter().await;
+                    }
                     _ => {}
                 }
             }
