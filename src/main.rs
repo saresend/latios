@@ -18,14 +18,22 @@ use ratatui::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-fn main() -> Result<()> {
+mod server;
+
+use server::{ServerConfig, run};
+
+#[tokio::main]
+async fn main() -> Result<()> {
     color_eyre::install();
     let mut app = LatiosApp::default();
     app.load()?;
 
+    let server_handle = tokio::spawn(async move { run(ServerConfig::default()).await });
+
     let mut terminal = ratatui::init();
     app.run(&mut terminal)?;
     ratatui::restore();
+    server_handle.abort();
     Ok(())
 }
 
@@ -35,6 +43,18 @@ pub struct Workstream {
     needs_attention: bool,
     spec_file: PathBuf,
     highlight: bool,
+}
+
+impl Workstream {
+    fn new(title: String, spec_file: String) -> Self {
+        let spec_file = PathBuf::from(spec_file);
+        Self {
+            title,
+            needs_attention: false,
+            spec_file,
+            highlight: false,
+        }
+    }
 }
 
 impl Widget for &Workstream {
@@ -57,11 +77,46 @@ impl Widget for &Workstream {
 pub struct NewWorkstream {
     title: String,
     spec_file: String,
+    title_focused: bool,
 }
 
 impl NewWorkstream {
     fn get_default_spec_location(&self) -> String {
         format!("~/.latios/specs/{}.md", self.title)
+    }
+
+    fn toggle_focus(&mut self) {
+        self.title_focused = !self.title_focused;
+    }
+
+    fn handle_char(&mut self, c: char) {
+        if self.title_focused {
+            self.title.push(c)
+        } else {
+            self.spec_file.push(c);
+        }
+    }
+
+    fn handle_backspace(&mut self) {
+        if self.title_focused {
+            self.title.pop();
+        } else {
+            self.spec_file.pop();
+        }
+    }
+
+    fn get_spec(&self) -> String {
+        if self.spec_file.is_empty() {
+            self.get_default_spec_location()
+        } else {
+            self.spec_file.clone()
+        }
+    }
+
+    fn get_workstream(self) -> Workstream {
+        let spec = self.get_spec();
+        let title = self.title;
+        Workstream::new(title, spec)
     }
 }
 
@@ -89,7 +144,7 @@ impl Widget for &TextInput {
     where
         Self: Sized,
     {
-        let text_input = Paragraph::default()
+        let text_input = Paragraph::new(self.text.clone())
             .style(self.style)
             .block(Block::bordered().title(self.title.clone()));
         text_input.render(area, buf);
@@ -106,17 +161,30 @@ impl Widget for &NewWorkstream {
             .constraints([Constraint::Max(4), Constraint::Max(4)]);
         let sections = layout.split(area);
 
-        let workstream_name_input =
-            TextInput::new("Workstream Name", "", Style::default().fg(Color::Cyan));
+        let highlight_style = Style::default().fg(Color::Cyan);
+        let base_style = Style::default().fg(Color::Gray);
+
+        let workstream_name_input = TextInput::new(
+            "Workstream Name",
+            self.title.clone(),
+            if self.title_focused {
+                highlight_style
+            } else {
+                base_style
+            },
+        );
         workstream_name_input.render(sections[0], buf);
 
-        let spec_file = if self.spec_file.is_empty() {
-            self.get_default_spec_location()
-        } else {
-            self.spec_file.clone()
-        };
-        let spec_file_input =
-            TextInput::new("Spec Location", spec_file, Style::default().fg(Color::Cyan));
+        let spec_file = self.get_spec();
+        let spec_file_input = TextInput::new(
+            "Spec Location",
+            spec_file,
+            if self.title_focused {
+                base_style
+            } else {
+                highlight_style
+            },
+        );
         spec_file_input.render(sections[1], buf);
     }
 }
@@ -126,7 +194,7 @@ pub struct LatiosApp {
     workstreams: Vec<Workstream>,
     exit: bool,
     curr_selected: usize,
-    is_creating_workstream: bool,
+    new_workstream: Option<NewWorkstream>,
 }
 
 impl LatiosApp {
@@ -162,12 +230,44 @@ impl LatiosApp {
         self.workstreams[self.curr_selected].highlight = true;
     }
     pub fn open_new_workstream_view(&mut self) {
-        self.is_creating_workstream = true;
+        self.new_workstream = Some(NewWorkstream::default())
     }
 
     pub fn handle_escape(&mut self) {
-        if self.is_creating_workstream {
-            self.is_creating_workstream = false;
+        if self.new_workstream.is_some() {
+            self.new_workstream = None;
+        }
+    }
+
+    pub fn handle_tab(&mut self) {
+        if let Some(new_workstream) = self.new_workstream.as_mut() {
+            new_workstream.toggle_focus()
+        }
+    }
+
+    pub fn handle_backspace(&mut self) {
+        if let Some(new_workstream) = self.new_workstream.as_mut() {
+            new_workstream.handle_backspace();
+        }
+    }
+    pub fn handle_enter(&mut self) {
+        if let Some(new_workstream) = self.new_workstream.take() {
+            let new_workstream = new_workstream.get_workstream();
+            self.workstreams.push(new_workstream)
+        }
+    }
+
+    pub fn handle_alphanum(&mut self, c: char) {
+        if let Some(new_workstream) = self.new_workstream.as_mut() {
+            new_workstream.handle_char(c);
+        } else {
+            match c {
+                'q' => self.exit = true,
+                'j' => self.change_selected(1),
+                'k' => self.change_selected(-1),
+                'a' => self.open_new_workstream_view(),
+                _ => {}
+            }
         }
     }
 
@@ -186,11 +286,11 @@ impl LatiosApp {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 match key_event.code {
-                    KeyCode::Char('q') => self.exit = true,
-                    KeyCode::Char('j') => self.change_selected(1),
-                    KeyCode::Char('k') => self.change_selected(-1),
-                    KeyCode::Char('a') => self.open_new_workstream_view(),
+                    KeyCode::Char(x) => self.handle_alphanum(x),
                     KeyCode::Esc => self.handle_escape(),
+                    KeyCode::Tab => self.handle_tab(),
+                    KeyCode::Backspace => self.handle_backspace(),
+                    KeyCode::Enter => self.handle_enter(),
                     _ => {}
                 }
             }
@@ -211,7 +311,7 @@ impl Widget for &LatiosApp {
         Self: Sized,
     {
         let mut constraint_set = vec![Constraint::Max(3), Constraint::Min(40)];
-        if self.is_creating_workstream {
+        if self.new_workstream.is_some() {
             constraint_set.push(Constraint::Max(10));
         }
 
@@ -235,9 +335,8 @@ impl Widget for &LatiosApp {
             workstream.render(stream_item[i], buf);
         }
 
-        if self.is_creating_workstream {
-            let new_workstream_widget = NewWorkstream::default();
-            new_workstream_widget.render(sections[2], buf);
+        if let Some(workstream) = self.new_workstream.as_ref() {
+            workstream.render(sections[2], buf)
         }
     }
 }
