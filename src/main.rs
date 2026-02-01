@@ -49,8 +49,7 @@ impl Widget for &Workstream {
             false => Style::default(),
         };
         let base_block = Block::bordered().title(title).style(block_style);
-        subtitle.render(base_block.inner(area), buf);
-        base_block.render(area, buf);
+        Paragraph::new(subtitle).block(base_block).render(area, buf);
     }
 }
 
@@ -66,6 +65,37 @@ impl NewWorkstream {
     }
 }
 
+#[derive(Debug, PartialEq, Default)]
+pub struct TextInput {
+    title: String,
+    text: String,
+    cursor_pos: usize,
+    style: Style,
+}
+
+impl TextInput {
+    fn new(title: impl ToString, text: impl ToString, style: Style) -> Self {
+        Self {
+            title: title.to_string(),
+            text: text.to_string(),
+            cursor_pos: 0,
+            style,
+        }
+    }
+}
+
+impl Widget for &TextInput {
+    fn render(self, area: Rect, buf: &mut Buffer)
+    where
+        Self: Sized,
+    {
+        let text_input = Paragraph::default()
+            .style(self.style)
+            .block(Block::bordered().title(self.title.clone()));
+        text_input.render(area, buf);
+    }
+}
+
 impl Widget for &NewWorkstream {
     fn render(self, area: Rect, buf: &mut Buffer)
     where
@@ -73,25 +103,21 @@ impl Widget for &NewWorkstream {
     {
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Max(5), Constraint::Max(5)]);
+            .constraints([Constraint::Max(4), Constraint::Max(4)]);
         let sections = layout.split(area);
 
-        let title_block = Block::bordered().title("Workstream Name");
-
-        self.title
-            .clone()
-            .render(title_block.inner(sections[0]), buf);
-        title_block.render(sections[0], buf);
-
-        let spec_location_block = Block::bordered().title("Spec file path");
+        let workstream_name_input =
+            TextInput::new("Workstream Name", "", Style::default().fg(Color::Cyan));
+        workstream_name_input.render(sections[0], buf);
 
         let spec_file = if self.spec_file.is_empty() {
             self.get_default_spec_location()
         } else {
             self.spec_file.clone()
         };
-        spec_file.render(spec_location_block.inner(sections[1]), buf);
-        spec_location_block.render(sections[1], buf);
+        let spec_file_input =
+            TextInput::new("Spec Location", spec_file, Style::default().fg(Color::Cyan));
+        spec_file_input.render(sections[1], buf);
     }
 }
 
